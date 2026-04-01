@@ -3,178 +3,243 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
-<title>Car Log (Mobile) - No Delete Button</title>
+<title>Car Log</title>
 <style>
   :root{
     --yellow:#ffd700;
     --muted:#f4f6f7;
     --border:#dfe7ea;
-    --touch:44px;
+    --touch:40px;
   }
-  html,body{height:100%;margin:0;font-family:"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;background:#fafbfd;color:#222}
-  .wrap{width:100%;max-width:420px;margin:10px auto;background:#fff;border:1px solid var(--border);border-radius:8px;overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,0.04)}
-  header{background:var(--yellow);padding:12px 14px;border-bottom:3px solid #e6c200}
-  header h1{margin:0;font-size:18px;text-align:center;font-weight:700}
-  .controls{display:flex;gap:8px;padding:10px 12px;align-items:center;flex-wrap:wrap}
-  .controls .btn{flex:1;padding:10px;border-radius:8px;border:0;font-weight:700;font-size:14px;cursor:pointer}
+  html,body{
+    height:100%;
+    margin:0;
+    font-family:"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    background:#fafbfd;
+    color:#222;
+  }
+
+  /* ── iPhone 13 mini: 375px logical width ── */
+  .wrap{
+    width:375px;
+    max-width:100%;
+    margin:0 auto;
+    background:#fff;
+    border:1px solid var(--border);
+    border-radius:0;
+    overflow:hidden;
+    box-shadow:0 2px 6px rgba(0,0,0,0.04);
+    min-height:100dvh;
+    display:flex;
+    flex-direction:column;
+  }
+
+  header{
+    background:var(--yellow);
+    padding:10px 12px;
+    border-bottom:3px solid #e6c200;
+    flex-shrink:0;
+  }
+  header h1{margin:0;font-size:17px;text-align:center;font-weight:700}
+
+  .controls{
+    display:flex;
+    gap:6px;
+    padding:8px 10px;
+    align-items:center;
+    flex-shrink:0;
+  }
+  .btn{
+    flex:1;
+    padding:9px 4px;
+    border-radius:7px;
+    border:0;
+    font-weight:700;
+    font-size:13px;
+    cursor:pointer;
+    white-space:nowrap;
+  }
   .btn.primary{background:#0078d4;color:white}
   .btn.ghost{background:white;border:1px solid var(--border);color:#333}
 
-  /* list area */
-  .list{padding:8px 10px;max-height:62vh;overflow:auto;-webkit-overflow-scrolling:touch;}
+  /* ── List ── */
+  .list{
+    padding:6px 8px;
+    flex:1;
+    overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
+  }
 
-  /* row: Date | Distance | Fuel | Note */
+  /* ── Row: 4 EQUAL columns ── */
   .row{
     display:grid;
-    grid-template-columns: 1fr 82px 82px 1.1fr;
-    gap:8px;
-    align-items:center;
-    padding:8px;
-    margin-bottom:8px;
+    grid-template-columns: repeat(4, 1fr);
+    gap:4px;
+    align-items:start;
+    padding:7px 6px;
+    margin-bottom:6px;
     border-radius:8px;
-    background:linear-gradient(#fff,#fff);
+    background:#fff;
     border:1px solid transparent;
     user-select:none;
     -webkit-user-select:none;
   }
   .row:nth-child(even){ background:var(--muted); }
+  .row.longpress{ outline:2px dashed #0078d4; }
 
-  .col{font-size:13px; display:flex; flex-direction:column; gap:6px;}
-  .col label{font-size:11px;color:#666; font-weight:600;}
-  input[type="date"], input[type="number"], input[type="text"] {
+  .col{
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+    min-width:0;
+  }
+  .col label{
+    font-size:9.5px;
+    color:#666;
+    font-weight:700;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+
+  /* ── Inputs ── */
+  input[type="date"],
+  input[type="number"],
+  input[type="text"]{
     width:100%;
     box-sizing:border-box;
-    padding:8px 10px;
+    padding:6px 4px;
     border:1px solid #e3e9ec;
-    border-radius:6px;
-    font-size:14px;
+    border-radius:5px;
+    font-size:12px;
     min-height:var(--touch);
+    -webkit-appearance:none;
+    appearance:none;
+  }
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button{ -webkit-appearance:none; margin:0; }
+  input[type="number"]{ -moz-appearance:textfield; }
+  input[type="date"]::-webkit-calendar-picker-indicator{
+    width:14px; padding:0; opacity:.5;
   }
 
-  /* hint overlay when long-press active */
-  .row.longpress { outline: 2px dashed #0078d4; }
+  /* ── Summary ── */
+  .summary{
+    padding:8px 10px;
+    border-top:1px solid var(--border);
+    display:flex;
+    gap:6px;
+    align-items:center;
+    flex-shrink:0;
+  }
+  .summary .info{
+    flex:1;
+    background:#fff;
+    border:1px solid var(--border);
+    padding:7px 4px;
+    border-radius:6px;
+    text-align:center;
+  }
+  .summary .info p{margin:0;font-weight:700;font-size:13px}
+  .summary .info div{font-size:11px;color:#666}
 
-  @media (max-width:360px){
-    .row{ grid-template-columns: 1fr 72px 72px 1fr; gap:6px; }
-    input[type="date"], input[type="number"], input[type="text"]{ padding:7px; font-size:13px; }
+  .note-bottom{
+    font-size:11px;
+    color:#888;
+    padding:6px 10px 10px;
+    flex-shrink:0;
   }
 
-  .summary{padding:10px 12px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center}
-  .summary .info{flex:1;background:#fff;border:1px solid var(--border);padding:8px;border-radius:6px;text-align:center}
-  .summary .info p{margin:0;font-weight:700;font-size:14px}
-  .note-bottom{font-size:12px;color:#666;padding:8px 12px}
   button,input,select{touch-action:manipulation}
 </style>
 </head>
 <body>
 <div class="wrap" role="application" aria-label="Car Log">
-  <header><h1>Car Log</h1></header>
+  <header><h1>🚗 Car Log</h1></header>
 
   <div class="controls">
-    <button id="addBtn" class="btn primary">Add Row</button>
-    <button id="exportBtn" class="btn ghost">Export CSV</button>
-    <label class="btn ghost" style="display:inline-flex;align-items:center;gap:8px;cursor:pointer">
-      Import<input id="importFile" type="file" accept=".csv,text/csv" style="display:none">
+    <button id="addBtn" class="btn primary">+ 추가</button>
+    <button id="exportBtn" class="btn ghost">CSV 내보내기</button>
+    <label class="btn ghost" style="display:inline-flex;align-items:center;justify-content:center;cursor:pointer">
+      가져오기<input id="importFile" type="file" accept=".csv,text/csv" style="display:none">
     </label>
   </div>
 
-  <div class="list" id="list" aria-live="polite">
-    <!-- rows -->
-  </div>
+  <div class="list" id="list" aria-live="polite"></div>
 
   <div class="summary">
     <div class="info">
-      <div style="font-size:12px;color:#666">Total Distance</div>
+      <div>총 운행거리</div>
       <p id="sumDistance">0</p>
     </div>
     <div class="info">
-      <div style="font-size:12px;color:#666">Total Fuel</div>
+      <div>총 주유비</div>
       <p id="sumFuel">0</p>
     </div>
   </div>
 
-  <div class="note-bottom">Tip: Long-press a row (~0.7s) to delete it. On iPhone use Share → Add to Home Screen to create a shortcut.</div>
+  <div class="note-bottom">💡 행을 0.7초 길게 누르면 삭제됩니다.</div>
 </div>
 
 <script>
-/* Storage key and expiry */
 const STORAGE_KEY = 'carlog_no_delbtn_v1';
 const EXPIRE_DAYS = 365;
 
-/* DOM */
-const listEl = document.getElementById('list');
-const addBtn = document.getElementById('addBtn');
-const exportBtn = document.getElementById('exportBtn');
-const importFile = document.getElementById('importFile');
+const listEl        = document.getElementById('list');
+const addBtn        = document.getElementById('addBtn');
+const exportBtn     = document.getElementById('exportBtn');
+const importFile    = document.getElementById('importFile');
 const sumDistanceEl = document.getElementById('sumDistance');
-const sumFuelEl = document.getElementById('sumFuel');
+const sumFuelEl     = document.getElementById('sumFuel');
 
-/* Local storage with expiry */
 function saveAll(items){
-  const payload = { savedAt: Date.now(), items };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ savedAt: Date.now(), items }));
 }
 function loadAll(){
   const raw = localStorage.getItem(STORAGE_KEY);
   if(!raw) return [];
   try{
     const p = JSON.parse(raw);
-    const ageDays = (Date.now() - (p.savedAt||0)) / (1000*60*60*24);
-    if(ageDays > EXPIRE_DAYS){ localStorage.removeItem(STORAGE_KEY); return []; }
-    return p.items || [];
+    if((Date.now()-(p.savedAt||0))/(864e5) > EXPIRE_DAYS){ localStorage.removeItem(STORAGE_KEY); return []; }
+    return p.items||[];
   }catch(e){ localStorage.removeItem(STORAGE_KEY); return []; }
 }
-function numberWithCommas(x){ return String(x).replace(/\B(?=(\d{3})+(?!\d))/g, ","); }
+function fmt(x){ return String(x).replace(/\B(?=(\d{3})+(?!\d))/g,","); }
 
-/* Create a row: Date | Distance | Fuel | Note */
 function createRow(data){
   const row = document.createElement('div');
-  row.className = 'row';
+  row.className='row';
   row.setAttribute('role','group');
 
-  // Date column
-  const colDate = document.createElement('div'); colDate.className = 'col';
-  const lblDate = document.createElement('label'); lblDate.textContent = 'Date';
-  const dateIn = document.createElement('input'); dateIn.type = 'date';
-  colDate.appendChild(lblDate); colDate.appendChild(dateIn);
+  const makeCol = (labelText, inputType, placeholder) => {
+    const col  = document.createElement('div'); col.className='col';
+    const lbl  = document.createElement('label'); lbl.textContent=labelText;
+    const inp  = document.createElement('input'); inp.type=inputType;
+    if(placeholder) inp.placeholder=placeholder;
+    col.appendChild(lbl); col.appendChild(inp);
+    return { col, inp };
+  };
 
-  // Distance column
-  const colDist = document.createElement('div'); colDist.className = 'col';
-  const lblDist = document.createElement('label'); lblDist.textContent = 'Distance (km)';
-  const distIn = document.createElement('input'); distIn.type = 'number'; distIn.placeholder='0';
-  colDist.appendChild(lblDist); colDist.appendChild(distIn);
+  const { col:colDate, inp:dateIn } = makeCol('날짜','date','');
+  const { col:colDist, inp:distIn } = makeCol('운행거리(km)','number','0');
+  const { col:colFuel, inp:fuelIn } = makeCol('주유비(₩)','number','0');
+  const { col:colNote, inp:noteIn } = makeCol('비고','text','메모');
 
-  // Fuel column
-  const colFuel = document.createElement('div'); colFuel.className = 'col';
-  const lblFuel = document.createElement('label'); lblFuel.textContent = 'Fuel (₩)';
-  const fuelIn = document.createElement('input'); fuelIn.type = 'number'; fuelIn.placeholder='0';
-  colFuel.appendChild(lblFuel); colFuel.appendChild(fuelIn);
-
-  // Note column
-  const colNote = document.createElement('div'); colNote.className = 'col';
-  const lblNote = document.createElement('label'); lblNote.textContent = 'Note';
-  const noteIn = document.createElement('input'); noteIn.type = 'text'; noteIn.placeholder='Remark';
-  colNote.appendChild(lblNote); colNote.appendChild(noteIn);
-
-  // Initial values
   if(data){
-    if(data.date) dateIn.value = data.date;
-    distIn.value = data.distance || '';
-    fuelIn.value = data.fuel || '';
-    noteIn.value = data.note || '';
+    if(data.date)     dateIn.value = data.date;
+    if(data.distance) distIn.value = data.distance;
+    if(data.fuel)     fuelIn.value = data.fuel;
+    if(data.note)     noteIn.value = data.note;
   }
 
-  // Events: input -> save & summary
-  [dateIn, distIn, fuelIn, noteIn].forEach(el => el.addEventListener('input', ()=>{ persist(); updateSummary(); }));
+  [dateIn,distIn,fuelIn,noteIn].forEach(el=>
+    el.addEventListener('input',()=>{ persist(); updateSummary(); })
+  );
 
-  // Long-press deletion (touch & mouse)
-  addLongPressListener(row, 700, () => {
-    // show confirm
-    const dateLabel = row.querySelector('input[type="date"]').value || '(no date)';
-    if (confirm(`Delete row for ${dateLabel}?`)) {
-      row.remove();
-      persist();
-      updateSummary();
+  addLongPress(row, 700, ()=>{
+    const d = dateIn.value||'(날짜 없음)';
+    if(confirm(`"${d}" 행을 삭제할까요?`)){
+      row.remove(); persist(); updateSummary();
     }
   });
 
@@ -182,144 +247,107 @@ function createRow(data){
   row.appendChild(colDist);
   row.appendChild(colFuel);
   row.appendChild(colNote);
-
   return row;
 }
 
-/* Long press utility: element, ms, callback */
-function addLongPressListener(el, ms, callback){
-  let timer = null;
-  let moved = false;
-
-  const start = (e) => {
-    moved = false;
-    el.classList.add('longpress');
-    timer = setTimeout(()=> {
-      callback();
-      cleanup();
-    }, ms);
-  };
-  const move = (e) => {
-    moved = true;
-    if (timer) { clearTimeout(timer); timer = null; el.classList.remove('longpress'); }
-  };
-  const end = (e) => {
-    if (timer) { clearTimeout(timer); timer = null; el.classList.remove('longpress'); }
-  };
-  const cleanup = () => { if (timer) { clearTimeout(timer); timer = null; } el.classList.remove('longpress'); };
-
-  // Touch events
-  el.addEventListener('touchstart', start, {passive:true});
-  el.addEventListener('touchmove', move, {passive:true});
-  el.addEventListener('touchend', end);
-  el.addEventListener('touchcancel', end);
-
-  // Mouse events for desktop
-  el.addEventListener('mousedown', (e) => {
-    // only left button
-    if (e.button !== 0) return;
-    start(e);
-  });
-  el.addEventListener('mousemove', (e) => { if (timer) move(e); });
-  el.addEventListener('mouseup', end);
-  el.addEventListener('mouseleave', end);
+function addLongPress(el, ms, cb){
+  let timer=null;
+  const start=()=>{ el.classList.add('longpress'); timer=setTimeout(()=>{ cb(); cleanup(); },ms); };
+  const cancel=()=>{ if(timer){ clearTimeout(timer); timer=null; } el.classList.remove('longpress'); };
+  const cleanup=()=>cancel();
+  el.addEventListener('touchstart',start,{passive:true});
+  el.addEventListener('touchmove',cancel,{passive:true});
+  el.addEventListener('touchend',cancel);
+  el.addEventListener('touchcancel',cancel);
+  el.addEventListener('mousedown',(e)=>{ if(e.button!==0)return; start(); });
+  el.addEventListener('mousemove',()=>{ if(timer) cancel(); });
+  el.addEventListener('mouseup',cancel);
+  el.addEventListener('mouseleave',cancel);
 }
 
-/* Render, persist, summary */
 function renderAll(){
-  listEl.innerHTML = '';
-  const items = loadAll();
-  if(items.length === 0){
-    listEl.appendChild(createRow());
-  } else {
-    items.forEach(it => listEl.appendChild(createRow(it)));
-  }
+  listEl.innerHTML='';
+  const items=loadAll();
+  (items.length ? items : [{}]).forEach(it=>listEl.appendChild(createRow(it)));
   updateSummary();
 }
 function persist(){
-  const rows = Array.from(listEl.querySelectorAll('.row'));
-  const items = rows.map(r=>{
-    const date = r.querySelector('input[type="date"]').value || '';
-    const nums = r.querySelectorAll('input[type="number"]');
-    const dist = nums[0] ? nums[0].value : '';
-    const fuel = nums[1] ? nums[1].value : '';
-    const note = r.querySelector('input[type="text"]').value || '';
-    return { date, distance: dist, fuel: fuel, note };
-  });
-  saveAll(items);
+  const rows=Array.from(listEl.querySelectorAll('.row'));
+  saveAll(rows.map(r=>{
+    const nums=r.querySelectorAll('input[type="number"]');
+    return{
+      date:    r.querySelector('input[type="date"]').value||'',
+      distance:nums[0]?nums[0].value:'',
+      fuel:    nums[1]?nums[1].value:'',
+      note:    r.querySelector('input[type="text"]').value||''
+    };
+  }));
 }
 function updateSummary(){
-  const rows = Array.from(listEl.querySelectorAll('.row'));
-  let totalDist = 0, totalFuel = 0;
-  rows.forEach(r=>{
-    const nums = r.querySelectorAll('input[type="number"]');
-    const d = Number(nums[0] ? nums[0].value : 0) || 0;
-    const f = Number(nums[1] ? nums[1].value : 0) || 0;
-    totalDist += d;
-    totalFuel += f;
+  let td=0,tf=0;
+  Array.from(listEl.querySelectorAll('.row')).forEach(r=>{
+    const n=r.querySelectorAll('input[type="number"]');
+    td+=Number(n[0]?.value)||0;
+    tf+=Number(n[1]?.value)||0;
   });
-  sumDistanceEl.textContent = numberWithCommas(totalDist);
-  sumFuelEl.textContent = numberWithCommas(totalFuel);
+  sumDistanceEl.textContent=fmt(td);
+  sumFuelEl.textContent=fmt(tf);
 }
 
-/* CSV export (English headers + BOM) */
 function exportCSV(){
-  const rows = Array.from(listEl.querySelectorAll('.row'));
-  const header = ['Date','Distance','Fuel','Note'];
-  const lines = [header.join(',')];
+  const rows=Array.from(listEl.querySelectorAll('.row'));
+  const esc=v=>((''+v).includes(',')||(''+v).includes('"'))?`"${(''+v).replace(/"/g,'""')}"`:v;
+  const lines=[['Date','Distance','Fuel','Note'].join(',')];
   rows.forEach(r=>{
-    const date = (r.querySelector('input[type="date"]').value || '');
-    const nums = r.querySelectorAll('input[type="number"]');
-    const dist = nums[0] ? nums[0].value : '';
-    const fuel = nums[1] ? nums[1].value : '';
-    const note = r.querySelector('input[type="text"]').value || '';
-    const esc = v => (v+'').includes(',')||(''+v).includes('"') ? `"${(''+v).replace(/"/g,'""')}"` : v;
-    lines.push([esc(date),esc(dist),esc(fuel),esc(note)].join(','));
+    const n=r.querySelectorAll('input[type="number"]');
+    lines.push([
+      esc(r.querySelector('input[type="date"]').value||''),
+      esc(n[0]?n[0].value:''),
+      esc(n[1]?n[1].value:''),
+      esc(r.querySelector('input[type="text"]').value||'')
+    ].join(','));
   });
-  const csvContent = lines.join('\r\n');
-  const bom = '\uFEFF';
-  const blob = new Blob([bom + csvContent], {type:'text/csv;charset=utf-8;'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = `carlog_${new Date().toISOString().slice(0,10)}.csv`; a.click();
-  URL.revokeObjectURL(url);
+  const blob=new Blob(['\uFEFF'+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`carlog_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
 }
 
-/* CSV import */
 function parseCSV(text){
-  const rows = text.split(/\r\n|\n/).filter(r=>r.trim());
-  if(rows.length <= 1) return [];
-  const data = [];
-  for(let i=1;i<rows.length;i++){
-    const line = rows[i];
-    const cols = []; let cur='', inQ=false;
+  const rows=text.split(/\r\n|\n/).filter(r=>r.trim());
+  if(rows.length<=1) return [];
+  return rows.slice(1).map(line=>{
+    const cols=[]; let cur='',inQ=false;
     for(let j=0;j<line.length;j++){
-      const ch = line[j];
-      if(ch === '"' ){ if(inQ && line[j+1]==='"'){ cur+='"'; j++; } else inQ = !inQ; }
-      else if(ch === ',' && !inQ){ cols.push(cur); cur=''; }
-      else cur += ch;
+      const ch=line[j];
+      if(ch==='"'){ if(inQ&&line[j+1]==='"'){cur+='"';j++;}else inQ=!inQ; }
+      else if(ch===','&&!inQ){ cols.push(cur); cur=''; }
+      else cur+=ch;
     }
     cols.push(cur);
-    data.push({ date: cols[0]||'', distance: cols[1]||'', fuel: cols[2]||'', note: cols[3]||'' });
-  }
-  return data;
+    return{date:cols[0]||'',distance:cols[1]||'',fuel:cols[2]||'',note:cols[3]||''};
+  });
 }
 
-/* Bind events */
-addBtn.addEventListener('click', ()=>{ listEl.appendChild(createRow()); persist(); updateSummary(); });
-exportBtn.addEventListener('click', exportCSV);
-importFile.addEventListener('change', (e)=>{
-  const f = e.target.files[0]; if(!f) return;
-  const reader = new FileReader();
-  reader.onload = (ev)=>{ const parsed = parseCSV(ev.target.result); if(parsed.length===0){ alert('No data to import'); return; }
-    listEl.innerHTML=''; parsed.forEach(d=>listEl.appendChild(createRow(d))); persist(); updateSummary();
+addBtn.addEventListener('click',()=>{ listEl.appendChild(createRow({})); persist(); updateSummary(); });
+exportBtn.addEventListener('click',exportCSV);
+importFile.addEventListener('change',(e)=>{
+  const f=e.target.files[0]; if(!f) return;
+  const reader=new FileReader();
+  reader.onload=(ev)=>{
+    const parsed=parseCSV(ev.target.result);
+    if(!parsed.length){ alert('가져올 데이터가 없습니다.'); return; }
+    listEl.innerHTML='';
+    parsed.forEach(d=>listEl.appendChild(createRow(d)));
+    persist(); updateSummary();
   };
-  reader.readAsText(f,'utf-8'); e.target.value='';
+  reader.readAsText(f,'utf-8');
+  e.target.value='';
 });
 
-/* Initialize */
 renderAll();
-setInterval(()=>{ persist(); }, 5000);
+setInterval(persist, 5000);
 </script>
 </body>
 </html>

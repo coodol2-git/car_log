@@ -189,10 +189,10 @@ function updateSummary(){
   sumFuelEl.textContent = numberWithCommas(totalFuel);
 }
 
-/* CSV export */
+/* CSV export (English headers + BOM for Excel) */
 function exportCSV(){
   const rows = Array.from(listEl.querySelectorAll('.row'));
-  const header = ['날짜','운행거리','주유비','비고'];
+  const header = ['Date','Distance','Fuel','Note']; // English headers
   const lines = [header.join(',')];
   rows.forEach(r=>{
     const date = (r.querySelector('input[type="date"]').value || '');
@@ -203,7 +203,9 @@ function exportCSV(){
     const esc = v => (v+'').includes(',')||(''+v).includes('"') ? `"${(''+v).replace(/"/g,'""')}"` : v;
     lines.push([esc(date),esc(dist),esc(fuel),esc(note)].join(','));
   });
-  const blob = new Blob([lines.join('\r\n')], {type:'text/csv;charset=utf-8;'});
+  const csvContent = lines.join('\r\n');
+  const bom = '\uFEFF'; // UTF-8 BOM to help Excel recognize UTF-8
+  const blob = new Blob([bom + csvContent], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = `carlog_simple_${new Date().toISOString().slice(0,10)}.csv`; a.click();

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>차량일지 (단독운행) - localStorage 적용본</title>
+<title>차량일지 (단독운행) - 확장형 템플릿</title>
 <!-- SheetJS (xlsx) for Excel export -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.19.0/dist/xlsx.full.min.js"></script>
 <style>
@@ -37,25 +37,10 @@
   .warning { background:#fff3cd; color:#856404; padding:6px 10px; border-radius:4px; border:1px solid #ffeeba; }
   .danger-cell { background:#ffe6e6 !important; }
   .file-input { display:none; }
-  /* 비밀번호 모달 스타일 */
-  #pwModal { position:fixed; left:0;top:0;right:0;bottom:0; background:rgba(0,0,0,0.45); display:flex;align-items:center;justify-content:center; z-index:9999; }
-  #pwBox { background:#fff;padding:20px;border-radius:8px; width:320px; box-shadow:0 6px 20px rgba(0,0,0,0.2); }
-  #pwBox input { width:100%; padding:8px; margin-top:8px; }
-  #pwBox button { margin-top:12px; width:100%; padding:8px; }
   @media(max-width:1000px){ .info { flex-direction:column; align-items:stretch; } .actions { margin-left:0; } }
 </style>
 </head>
 <body>
-<!-- 간단 비밀번호 모달 (임시용) -->
-<div id="pwModal" style="display:none;">
-  <div id="pwBox">
-    <div style="font-weight:700; font-size:16px; text-align:center;">비밀번호를 입력하세요</div>
-    <input id="sitePasswordInput" type="password" placeholder="비밀번호">
-    <button id="sitePasswordSubmit">확인</button>
-    <div style="font-size:12px;color:#666;margin-top:8px;text-align:center;">※ 임시 보호: 개발/테스트용입니다. 민감데이터는 서버 인증을 권장합니다.</div>
-  </div>
-</div>
-
 <div class="container">
   <header>
     <h1>차량일지 (단독운행)</h1>
@@ -170,13 +155,7 @@
 </div>
 
 <script>
-  /* ---------- 설정값 ---------- */
-  const INFO_KEY = 'carlog_info_v1'; // localStorage 키 (버전 붙임)
-  const AUTH_KEY = 'carlog_auth_ok_v1';
-  const INFO_MAX_DAYS = 365; // 만료일(일)
-  const PASSWORD_PLAIN = 'your_simple_password'; // 임시 비밀번호(서버 권장)
-
-  /* ---------- DOM ---------- */
+  // 기본 요소들
   const yearSelect = document.getElementById('yearSelect');
   const monthSelect = document.getElementById('monthSelect');
   const tbody = document.getElementById('tbody');
@@ -202,54 +181,7 @@
   function daysInMonth(y, m) { return new Date(y, m, 0).getDate(); }
   function weekdayName(y, m, d) { const wd = ['일','월','화','수','목','금','토']; return wd[new Date(y, m-1, d).getDay()]; }
 
-  /* ---------- localStorage 유틸 (만료 포함) ---------- */
-  function saveInfoWithExpiry(data) {
-    const payload = {
-      savedAt: Date.now(),
-      data
-    };
-    localStorage.setItem(INFO_KEY, JSON.stringify(payload));
-  }
-  function loadInfoWithExpiry() {
-    const raw = localStorage.getItem(INFO_KEY);
-    if (!raw) return null;
-    try {
-      const p = JSON.parse(raw);
-      const ageDays = (Date.now() - (p.savedAt || 0)) / (1000*60*60*24);
-      if (ageDays > INFO_MAX_DAYS) {
-        localStorage.removeItem(INFO_KEY);
-        return null;
-      }
-      return p.data || null;
-    } catch(e) {
-      console.warn('loadInfoWithExpiry parse error', e);
-      localStorage.removeItem(INFO_KEY);
-      return null;
-    }
-  }
-
-  /* sessionStorage -> localStorage 마이그레이션 (기존 데이터 보존을 위해) */
-  (function migrateSessionToLocal() {
-    try {
-      const legacyKey = 'carlog_info'; // 기존 세션 키(이전 코드에서 사용)
-      if (sessionStorage.getItem(legacyKey) && !localStorage.getItem(INFO_KEY)) {
-        const raw = sessionStorage.getItem(legacyKey);
-        localStorage.setItem(INFO_KEY, JSON.stringify({ savedAt: Date.now(), data: JSON.parse(raw) }));
-        // optional: remove sessionStorage legacy
-        // sessionStorage.removeItem(legacyKey);
-        console.info('sessionStorage -> localStorage 마이그레이션 완료');
-      }
-      // 인증 키 migrate (if any)
-      const legacyAuth = 'carlog_auth_ok';
-      if (sessionStorage.getItem(legacyAuth) && !localStorage.getItem(AUTH_KEY)) {
-        localStorage.setItem(AUTH_KEY, sessionStorage.getItem(legacyAuth));
-      }
-    } catch(e) {
-      console.warn('migration error', e);
-    }
-  })();
-
-  /* ---------- 테이블 생성/계산 로직 (기존과 동일) ---------- */
+  // 테이블 빌드 함수 (기존 로우 유지 옵션: keepExisting)
   function buildTable(year, month, keepExisting=false) {
     const days = daysInMonth(year, month);
     if (!keepExisting) tbody.innerHTML = '';
@@ -339,6 +271,7 @@
       tr.classList.remove('danger-row');
       distCell.classList.remove('danger-cell');
     } else {
+      // 경고 표기: 음수인 경우 빨간 배경 표시하고 0으로 처리
       dist = 0;
       distCell.classList.add('danger-cell');
     }
@@ -368,22 +301,31 @@
     return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   }
 
-  /* ---------- 행 추가/삭제/복사 ---------- */
+  // 행 추가/삭제/복사
   document.getElementById('addRowBtn').addEventListener('click', () => {
+    // 마지막 날짜 다음의 임시 행 생성 (날짜는 빈칸)
     const tr = document.createElement('tr');
     const tdChk = document.createElement('td');
     const chk = document.createElement('input'); chk.type='checkbox'; chk.className='row-select'; tdChk.appendChild(chk); tr.appendChild(tdChk);
 
     const tdDate = document.createElement('td'); tdDate.className='col-date'; tdDate.textContent = ''; tr.appendChild(tdDate);
     const tdWd = document.createElement('td'); tdWd.textContent=''; tr.appendChild(tdWd);
-
+    const cells = ['input-before','input-after','auto-dist','input-commute','input-work','input-personal','input-fuel','input-note'];
+    // 주행전
     const tdBefore = document.createElement('td'); const inBefore = document.createElement('input'); inBefore.type='number'; inBefore.className='cell input-before'; tdBefore.appendChild(inBefore); tr.appendChild(tdBefore);
+    // 주행후
     const tdAfter = document.createElement('td'); const inAfter = document.createElement('input'); inAfter.type='number'; inAfter.className='cell input-after'; tdAfter.appendChild(inAfter); tr.appendChild(tdAfter);
+    // 거리
     const tdDist = document.createElement('td'); tdDist.className='right auto-dist'; tdDist.textContent='0'; tr.appendChild(tdDist);
+    // 출퇴근
     const tdCommute = document.createElement('td'); const inCommute = document.createElement('input'); inCommute.type='number'; inCommute.className='cell input-commute'; tdCommute.appendChild(inCommute); tr.appendChild(tdCommute);
+    // 일반업무
     const tdWork = document.createElement('td'); const inWork = document.createElement('input'); inWork.type='number'; inWork.className='cell input-work'; tdWork.appendChild(inWork); tr.appendChild(tdWork);
+    // 개인용
     const tdPersonal = document.createElement('td'); const inPersonal = document.createElement('input'); inPersonal.type='number'; inPersonal.className='cell input-personal'; tdPersonal.appendChild(inPersonal); tr.appendChild(tdPersonal);
+    // 주유비
     const tdFuel = document.createElement('td'); const inFuel = document.createElement('input'); inFuel.type='number'; inFuel.className='cell input-fuel'; tdFuel.appendChild(inFuel); tr.appendChild(tdFuel);
+    // 비고
     const tdNote = document.createElement('td'); const inNote = document.createElement('input'); inNote.type='text'; inNote.className='cell input-note'; tdNote.appendChild(inNote); tr.appendChild(tdNote);
 
     [inBefore,inAfter,inCommute,inWork,inPersonal,inFuel].forEach(el => el.addEventListener('input', ()=>{ updateRowCalculations(tr); updateSummary(); }));
@@ -406,6 +348,7 @@
     if (toCopy.length === 0) { alert('복사할 행을 선택하세요.'); return; }
     toCopy.forEach(r => {
       const clone = r.cloneNode(true);
+      // 클론된 input 이벤트 재바인딩
       const inputs = clone.querySelectorAll('input');
       inputs.forEach(inp => {
         if (inp.type === 'checkbox') { inp.checked = false; return; }
@@ -419,25 +362,27 @@
     updateSummary();
   });
 
+  // 전체 선택 체크박스
   document.getElementById('selectAll').addEventListener('change', (e) => {
     const checked = e.target.checked;
     document.querySelectorAll('.row-select').forEach(cb => cb.checked = checked);
   });
 
-  /* ---------- CSV / Excel 내보내기/불러오기 ---------- */
+  // CSV 내보내기
   document.getElementById('exportCsvBtn').addEventListener('click', () => {
     const csv = tableToCSV();
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
+    a.href = url;
     const y = yearSelect.value || currentYear;
     const m = String(monthSelect.value || currentMonth).padStart(2,'0');
-    a.href = url;
     a.download = `carlog_${y}_${m}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   });
 
+  // Excel(xlsx) 내보내기 (SheetJS 사용)
   document.getElementById('exportXlsxBtn').addEventListener('click', () => {
     const ws_data = tableToArray(); // 2D array
     const wb = XLSX.utils.book_new();
@@ -452,6 +397,7 @@
     a.href = url; a.download = `carlog_${y}_${m}.xlsx`; a.click(); URL.revokeObjectURL(url);
   });
 
+  // 테이블 -> CSV 문자열
   function tableToCSV() {
     const rows = Array.from(tbody.querySelectorAll('tr'));
     const header = ['일자','요일','주행전','주행후','주행거리','출퇴근','일반업무','개인용','주유비','비고'];
@@ -472,6 +418,7 @@
     });
     return lines.join('\r\n');
   }
+
   function csvEscape(text) {
     if (text == null) return '';
     const s = String(text);
@@ -480,6 +427,8 @@
     }
     return s;
   }
+
+  // 테이블 -> 2D array (Excel)
   function tableToArray() {
     const rows = Array.from(tbody.querySelectorAll('tr'));
     const header = ['일자','요일','주행전','주행후','주행거리','출퇴근','일반업무','개인용','주유비','비고'];
@@ -500,6 +449,7 @@
     return aoa;
   }
 
+  // CSV 불러오기 (파일 선택)
   document.getElementById('importCsvInput').addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -510,9 +460,10 @@
       handleImportedRows(parsed);
     };
     reader.readAsText(file, 'utf-8');
-    e.target.value = '';
+    e.target.value = ''; // 연속 업로드 허용
   });
 
+  // Excel 불러오기
   document.getElementById('importXlsxInput').addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -522,6 +473,7 @@
       const workbook = XLSX.read(data, {type:'array'});
       const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
       const aoa = XLSX.utils.sheet_to_json(firstSheet, {header:1});
+      // aoa 첫 행 헤더 제거 후 처리
       const rows = aoa.slice(1).map(r => r.map(c => c == null ? '' : String(c)));
       handleImportedRows(rows);
     };
@@ -529,9 +481,12 @@
     e.target.value = '';
   });
 
+  // CSV 파서(간단)
   function parseCSV(text) {
+    // 간단한 CSV 파서: 줄 단위로 분리하고 큰따옴표 처리
     const lines = [];
     const rows = text.split(/\r\n|\n/);
+    // assume first line header
     for (let i=1;i<rows.length;i++){
       if (!rows[i].trim()) continue;
       const row = splitCsvRow(rows[i]);
@@ -548,18 +503,20 @@
         if (inQuotes && row[i+1] === '"') { cur += '"'; i++; }
         else inQuotes = !inQuotes;
       } else if (ch === ',' && !inQuotes) {
-        res.push(cur); cur='';
+        res.push(cur); cur=''; 
       } else cur += ch;
     }
     res.push(cur);
     return res;
   }
 
+  // 불러온 행 처리: rows: 2D array (각 원소는 문자열)
   function handleImportedRows(rows) {
     if (!rows || rows.length === 0) { alert('불러올 데이터가 없습니다.'); return; }
-    const mode = importModeEl.value;
+    const mode = importModeEl.value; // merge or replace
     if (mode === 'replace') tbody.innerHTML = '';
     rows.forEach(cols => {
+      // 기대 컬럼: [date, wd, before, after, dist, commute, work, personal, fuel, note]
       const tr = document.createElement('tr');
       const tdChk = document.createElement('td'); const chk = document.createElement('input'); chk.type='checkbox'; chk.className='row-select'; tdChk.appendChild(chk); tr.appendChild(tdChk);
 
@@ -584,78 +541,14 @@
 
       [inBefore,inAfter,inCommute,inWork,inPersonal,inFuel].forEach(el => el.addEventListener('input', ()=>{ updateRowCalculations(tr); updateSummary(); }));
 
+      // 자동 계산 및 유효성 처리
       updateRowCalculations(tr);
       tbody.appendChild(tr);
     });
     updateSummary();
   }
 
-  /* ---------- 상단 정보 저장/불러오기 (localStorage 사용) ---------- */
-  document.getElementById('saveInfoBtn').addEventListener('click', () => {
-    const data = {
-      year: yearSelect.value, month: monthSelect.value,
-      company: document.getElementById('company').value, department: document.getElementById('department').value,
-      carNo: document.getElementById('carNo').value, empNo: document.getElementById('empNo').value,
-      userName: document.getElementById('userName').value
-    };
-    saveInfoWithExpiry(data);
-    alert('상단 정보가 localStorage에 저장되었습니다.');
-  });
-
-  document.getElementById('resetBtn').addEventListener('click', () => {
-    if (confirm('상단 입력값을 초기화하시겠습니까?')) {
-      ['company','department','carNo','empNo','userName'].forEach(id => document.getElementById(id).value='');
-      localStorage.removeItem(INFO_KEY);
-      alert('상단 정보가 삭제되었습니다.');
-    }
-  });
-
-  /* ---------- 간단 클라이언트 비밀번호 모달(임시) ---------- */
-  (function authModalFlow(){
-    const modal = document.getElementById('pwModal');
-    const input = document.getElementById('sitePasswordInput');
-    const btn = document.getElementById('sitePasswordSubmit');
-
-    function showModal() { modal.style.display = 'flex'; input.focus(); }
-    function hideModal() { modal.style.display = 'none'; }
-
-    // localStorage에 인증 키가 없으면 모달 표시
-    if (localStorage.getItem(AUTH_KEY) !== '1') {
-      showModal();
-    }
-
-    btn.addEventListener('click', () => {
-      const v = input.value || '';
-      // 주의: 클라이언트 측 비밀번호는 보안상 취약. 테스트/내부용으로만 사용하세요.
-      if (v === PASSWORD_PLAIN) {
-        localStorage.setItem(AUTH_KEY, '1');
-        hideModal();
-      } else {
-        alert('비밀번호가 올바르지 않습니다.');
-      }
-    });
-    input.addEventListener('keyup', (e) => { if (e.key === 'Enter') btn.click(); });
-  })();
-
-  /* ---------- 초기 로드 ---------- */
-  window.addEventListener('load', () => {
-    // 저장된 상단 정보 불러오기(만료 체크 포함)
-    const saved = loadInfoWithExpiry();
-    if (saved) {
-      if (saved.year) yearSelect.value = saved.year;
-      if (saved.month) monthSelect.value = saved.month;
-      document.getElementById('company').value = saved.company || '';
-      document.getElementById('department').value = saved.department || '';
-      document.getElementById('carNo').value = saved.carNo || '';
-      document.getElementById('empNo').value = saved.empNo || '';
-      document.getElementById('userName').value = saved.userName || '';
-    }
-
-    buildTable(currentYear, currentMonth, false);
-  });
-
-  /* ---------- 기타(주의/확인 메시지 등) ---------- */
-  // 연/월 변경 시 테이블 재생성(기본은 교체)
+  // 상단 연/월 변경 시 새 테이블 생성(기본은 교체)
   yearSelect.addEventListener('change', () => {
     if (confirm('새 월을 선택하면 현재 페이지의 표가 재생성됩니다. 계속하시겠습니까?')) {
       buildTable(Number(yearSelect.value), Number(monthSelect.value), false);
@@ -671,7 +564,42 @@
     }
   });
 
-  // 추가: CSV/Excel 업로드 시 인코딩 문제 등 발생하면 알려주시면 인코딩 선택(UTF-8/CP949) 옵션 추가해 드리겠습니다.
+  // 상단 정보 저장/초기화 (sessionStorage)
+  document.getElementById('saveInfoBtn').addEventListener('click', () => {
+    const data = {
+      year: yearSelect.value, month: monthSelect.value,
+      company: document.getElementById('company').value, department: document.getElementById('department').value,
+      carNo: document.getElementById('carNo').value, empNo: document.getElementById('empNo').value,
+      userName: document.getElementById('userName').value
+    };
+    sessionStorage.setItem('carlog_info', JSON.stringify(data));
+    alert('상단 정보가 저장되었습니다.');
+  });
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    if (confirm('상단 입력값을 초기화하시겠습니까?')) {
+      ['company','department','carNo','empNo','userName'].forEach(id => document.getElementById(id).value='');
+      sessionStorage.removeItem('carlog_info');
+    }
+  });
+  window.addEventListener('load', () => {
+    const saved = sessionStorage.getItem('carlog_info');
+    if (saved) {
+      try {
+        const d = JSON.parse(saved);
+        if (d.year) yearSelect.value = d.year;
+        if (d.month) monthSelect.value = d.month;
+        document.getElementById('company').value = d.company || '';
+        document.getElementById('department').value = d.department || '';
+        document.getElementById('carNo').value = d.carNo || '';
+        document.getElementById('empNo').value = d.empNo || '';
+        document.getElementById('userName').value = d.userName || '';
+      } catch(e){}
+    }
+    buildTable(currentYear, currentMonth, false);
+  });
+
+  // 추가: CSV/Excel을 불러올 때 컬럼 수 검사 등 간단한 유효성 안내는 alert로 처리
+  // 필요 시 불러올 때 매핑 UI(컬럼 지정) 추가 가능
 </script>
 </body>
 </html>

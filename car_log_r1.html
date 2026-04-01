@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>차량일지 (단독운행) - 확장형 템플릿</title>
+<!-- SheetJS (xlsx) for Excel export -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.19.0/dist/xlsx.full.min.js"></script>
+<style>
+  body { font-family: "Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR", sans-serif; margin:20px; background:#f5f7f9; color:#222; }
+  .container { max-width:1300px; margin:0 auto; background:#fff; border:1px solid #d6dce0; }
+  header { background:#ffd700; padding:14px 20px; border-bottom:3px solid #e6c200; }
+  header h1 { margin:0; font-size:22px; font-weight:700; color:#0b0b0b; text-align:center; }
+  .info { padding:16px 20px; display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+  .field { display:flex; flex-direction:column; min-width:140px; }
+  .field label { font-size:12px; color:#333; margin-bottom:6px; }
+  .field input, .field select { padding:8px 10px; border:1px solid #cfd8dc; border-radius:4px; font-size:14px; }
+  .actions { margin-left:auto; display:flex; gap:8px; }
+  .btn { padding:8px 12px; border-radius:4px; border:0; cursor:pointer; font-weight:600; }
+  .btn.primary { background:#0078d4; color:#fff; }
+  .btn.ghost { background:#fff; border:1px solid #cfd8dc; color:#333; }
+  .control-bar { display:flex; gap:8px; padding:10px 20px; border-top:1px solid #e6edf0; background:#fff; align-items:center; }
+  .table-wrap { padding:12px 20px 24px 20px; overflow:auto; }
+  table { border-collapse:collapse; width:100%; min-width:1100px; }
+  th, td { border:1px solid #dfe7ea; padding:8px 10px; text-align:center; font-size:13px; }
+  thead th { background:#fff59d; color:#222; font-weight:700; position:sticky; top:0; z-index:2; }
+  tbody tr:nth-child(odd) { background:#ffffff; }
+  tbody tr:nth-child(even) { background:#f4f6f7; }
+  .col-date { background:#f7f4e3; font-weight:700; }
+  input.cell { width:100%; padding:6px 8px; border:1px solid transparent; background:transparent; text-align:right; }
+  input.cell:focus { outline:1px solid #8ec1ff; background:#fff; border-radius:2px; }
+  td.right { text-align:right; padding-right:12px; }
+  .summary { display:flex; gap:16px; padding:12px 20px 20px 20px; align-items:center; border-top:1px solid #e6edf0; background:#fbfcfd; }
+  .summary .box { padding:10px 12px; border-radius:6px; background:#fff; border:1px solid #e6edf0; min-width:180px; text-align:center; }
+  .summary .box h4 { margin:0 0 6px 0; font-size:12px; color:#666; }
+  .summary .box p { margin:0; font-size:16px; font-weight:700; color:#111; }
+  .warning { background:#fff3cd; color:#856404; padding:6px 10px; border-radius:4px; border:1px solid #ffeeba; }
+  .danger-cell { background:#ffe6e6 !important; }
+  .file-input { display:none; }
+  @media(max-width:1000px){ .info { flex-direction:column; align-items:stretch; } .actions { margin-left:0; } }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>차량일지 (단독운행)</h1>
+  </header>
+
+  <section class="info" aria-label="상단정보">
+    <div class="field">
+      <label>연도</label>
+      <select id="yearSelect"></select>
+    </div>
+    <div class="field">
+      <label>월</label>
+      <select id="monthSelect"></select>
+    </div>
+    <div class="field">
+      <label>회사명</label>
+      <input id="company" type="text" placeholder="회사명 입력" />
+    </div>
+    <div class="field">
+      <label>부서</label>
+      <input id="department" type="text" placeholder="부서 입력" />
+    </div>
+    <div class="field">
+      <label>차량번호</label>
+      <input id="carNo" type="text" placeholder="차량번호" />
+    </div>
+    <div class="field">
+      <label>사번</label>
+      <input id="empNo" type="text" placeholder="사번" />
+    </div>
+    <div class="field">
+      <label>사용자명</label>
+      <input id="userName" type="text" placeholder="사용자명" />
+    </div>
+
+    <div class="actions">
+      <button class="btn ghost" id="resetBtn">초기화</button>
+      <button class="btn primary" id="saveInfoBtn">정보 저장</button>
+    </div>
+  </section>
+
+  <div class="control-bar">
+    <button class="btn ghost" id="addRowBtn">행 추가</button>
+    <button class="btn ghost" id="copyRowBtn">선택 행 복사</button>
+    <button class="btn ghost" id="deleteRowBtn">선택 행 삭제</button>
+
+    <div style="width:12px"></div>
+
+    <button class="btn primary" id="exportCsvBtn">CSV 내보내기</button>
+    <button class="btn primary" id="exportXlsxBtn">Excel(xlsx) 내보내기</button>
+
+    <label class="btn ghost" style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;">
+      CSV 불러오기
+      <input type="file" id="importCsvInput" accept=".csv,text/csv" class="file-input" />
+    </label>
+
+    <label class="btn ghost" style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;">
+      Excel 불러오기
+      <input type="file" id="importXlsxInput" accept=".xlsx,.xls" class="file-input" />
+    </label>
+
+    <div style="margin-left:auto; font-size:13px; color:#555;">
+      <span class="warning">주의: 불러오기 시 '병합' 또는 '교체'로 처리됩니다.</span>
+      <select id="importMode" style="margin-left:8px; padding:6px 8px; border-radius:4px; border:1px solid #cfd8dc;">
+        <option value="merge">병합</option>
+        <option value="replace">교체</option>
+      </select>
+    </div>
+  </div>
+
+  <section class="table-wrap" aria-label="입력테이블">
+    <table id="logTable">
+      <thead>
+        <tr>
+          <th style="width:40px;"><input type="checkbox" id="selectAll"></th>
+          <th>일자</th>
+          <th>요일</th>
+          <th>주행 전<br>(계기판 km)</th>
+          <th>주행 후<br>(계기판 km)</th>
+          <th>주행거리<br>(자동)</th>
+          <th>출퇴근</th>
+          <th>일반업무</th>
+          <th>개인용</th>
+          <th>주유비</th>
+          <th>비고</th>
+        </tr>
+      </thead>
+      <tbody id="tbody">
+        <!-- JS에서 생성 -->
+      </tbody>
+    </table>
+  </section>
+
+  <section class="summary">
+    <div class="box">
+      <h4>총 주행거리</h4>
+      <p id="sumDistance">0</p>
+    </div>
+    <div class="box">
+      <h4>업무 사용 합계 (출퇴근 + 일반업무)</h4>
+      <p id="sumWork">0</p>
+    </div>
+    <div class="box">
+      <h4>업무사용비율</h4>
+      <p id="workRatio">0 %</p>
+    </div>
+    <div class="box">
+      <h4>주유비 합계</h4>
+      <p id="sumFuel">0</p>
+    </div>
+  </section>
+</div>
+
+<script>
+  // 기본 요소들
+  const yearSelect = document.getElementById('yearSelect');
+  const monthSelect = document.getElementById('monthSelect');
+  const tbody = document.getElementById('tbody');
+  const sumDistanceEl = document.getElementById('sumDistance');
+  const sumWorkEl = document.getElementById('sumWork');
+  const workRatioEl = document.getElementById('workRatio');
+  const sumFuelEl = document.getElementById('sumFuel');
+  const importModeEl = document.getElementById('importMode');
+
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  const currentMonth = today.getMonth() + 1;
+
+  for (let y = currentYear - 1; y <= currentYear + 1; y++) {
+    const opt = document.createElement('option'); opt.value = y; opt.textContent = y + '년';
+    if (y === currentYear) opt.selected = true; yearSelect.appendChild(opt);
+  }
+  for (let m = 1; m <= 12; m++) {
+    const opt = document.createElement('option'); opt.value = m; opt.textContent = m + '월';
+    if (m === currentMonth) opt.selected = true; monthSelect.appendChild(opt);
+  }
+
+  function daysInMonth(y, m) { return new Date(y, m, 0).getDate(); }
+  function weekdayName(y, m, d) { const wd = ['일','월','화','수','목','금','토']; return wd[new Date(y, m-1, d).getDay()]; }
+
+  // 테이블 빌드 함수 (기존 로우 유지 옵션: keepExisting)
+  function buildTable(year, month, keepExisting=false) {
+    const days = daysInMonth(year, month);
+    if (!keepExisting) tbody.innerHTML = '';
+    for (let d = 1; d <= days; d++) {
+      const tr = document.createElement('tr');
+
+      // 선택 체크박스
+      const tdChk = document.createElement('td');
+      const chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.className = 'row-select';
+      tdChk.appendChild(chk);
+      tr.appendChild(tdChk);
+
+      const tdDate = document.createElement('td'); tdDate.className = 'col-date';
+      tdDate.textContent = String(year).slice(2) + '/' + String(month).padStart(2,'0') + '/' + String(d).padStart(2,'0');
+      tr.appendChild(tdDate);
+
+      const tdWd = document.createElement('td'); tdWd.textContent = weekdayName(year, month, d); tr.appendChild(tdWd);
+
+      // 주행 전
+      const tdBefore = document.createElement('td');
+      const inBefore = document.createElement('input'); inBefore.type='number'; inBefore.className='cell input-before'; inBefore.min=0;
+      tdBefore.appendChild(inBefore); tr.appendChild(tdBefore);
+
+      // 주행 후
+      const tdAfter = document.createElement('td');
+      const inAfter = document.createElement('input'); inAfter.type='number'; inAfter.className='cell input-after'; inAfter.min=0;
+      tdAfter.appendChild(inAfter); tr.appendChild(tdAfter);
+
+      // 주행거리
+      const tdDist = document.createElement('td'); tdDist.className='right auto-dist'; tdDist.textContent='0'; tr.appendChild(tdDist);
+
+      // 출퇴근
+      const tdCommute = document.createElement('td');
+      const inCommute = document.createElement('input'); inCommute.type='number'; inCommute.className='cell input-commute'; inCommute.min=0;
+      tdCommute.appendChild(inCommute); tr.appendChild(tdCommute);
+
+      // 일반업무
+      const tdWork = document.createElement('td');
+      const inWork = document.createElement('input'); inWork.type='number'; inWork.className='cell input-work'; inWork.min=0;
+      tdWork.appendChild(inWork); tr.appendChild(tdWork);
+
+      // 개인용
+      const tdPersonal = document.createElement('td');
+      const inPersonal = document.createElement('input'); inPersonal.type='number'; inPersonal.className='cell input-personal'; inPersonal.min=0;
+      tdPersonal.appendChild(inPersonal); tr.appendChild(tdPersonal);
+
+      // 주유비
+      const tdFuel = document.createElement('td');
+      const inFuel = document.createElement('input'); inFuel.type='number'; inFuel.className='cell input-fuel'; inFuel.min=0;
+      tdFuel.appendChild(inFuel); tr.appendChild(tdFuel);
+
+      // 비고
+      const tdNote = document.createElement('td');
+      const inNote = document.createElement('input'); inNote.type='text'; inNote.className='cell input-note';
+      tdNote.appendChild(inNote); tr.appendChild(tdNote);
+
+      // 이벤트 바인딩
+      [inBefore, inAfter, inCommute, inWork, inPersonal, inFuel].forEach(el => {
+        el.addEventListener('input', () => {
+          updateRowCalculations(tr);
+          updateSummary();
+        });
+      });
+
+      // 클릭 시 행 선택 토글(행 클릭으로 체크)
+      tr.addEventListener('click', (e) => {
+        if (e.target.type !== 'checkbox' && e.target.tagName !== 'INPUT') {
+          const cb = tr.querySelector('.row-select');
+          cb.checked = !cb.checked;
+        }
+      });
+
+      tbody.appendChild(tr);
+    }
+    updateSummary();
+  }
+
+  function updateRowCalculations(tr) {
+    const before = Number(tr.querySelector('.input-before').value || 0);
+    const after = Number(tr.querySelector('.input-after').value || 0);
+    const distCell = tr.querySelector('.auto-dist');
+    let dist = 0;
+    if (after >= before) {
+      dist = after - before;
+      tr.classList.remove('danger-row');
+      distCell.classList.remove('danger-cell');
+    } else {
+      // 경고 표기: 음수인 경우 빨간 배경 표시하고 0으로 처리
+      dist = 0;
+      distCell.classList.add('danger-cell');
+    }
+    distCell.textContent = dist;
+  }
+
+  function updateSummary() {
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    let totalDist = 0, totalWork = 0, totalFuel = 0;
+    rows.forEach(tr => {
+      const dist = Number(tr.querySelector('.auto-dist').textContent || 0);
+      const commute = Number(tr.querySelector('.input-commute').value || 0);
+      const work = Number(tr.querySelector('.input-work').value || 0);
+      const fuel = Number(tr.querySelector('.input-fuel').value || 0);
+      totalDist += dist;
+      totalWork += (commute + work);
+      totalFuel += fuel;
+    });
+    sumDistanceEl.textContent = numberWithCommas(totalDist);
+    sumWorkEl.textContent = numberWithCommas(totalWork);
+    sumFuelEl.textContent = numberWithCommas(totalFuel);
+    const ratio = totalDist > 0 ? ((totalWork / totalDist) * 100) : 0;
+    workRatioEl.textContent = ratio ? ratio.toFixed(1) + ' %' : '0 %';
+  }
+
+  function numberWithCommas(x) {
+    return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  }
+
+  // 행 추가/삭제/복사
+  document.getElementById('addRowBtn').addEventListener('click', () => {
+    // 마지막 날짜 다음의 임시 행 생성 (날짜는 빈칸)
+    const tr = document.createElement('tr');
+    const tdChk = document.createElement('td');
+    const chk = document.createElement('input'); chk.type='checkbox'; chk.className='row-select'; tdChk.appendChild(chk); tr.appendChild(tdChk);
+
+    const tdDate = document.createElement('td'); tdDate.className='col-date'; tdDate.textContent = ''; tr.appendChild(tdDate);
+    const tdWd = document.createElement('td'); tdWd.textContent=''; tr.appendChild(tdWd);
+    const cells = ['input-before','input-after','auto-dist','input-commute','input-work','input-personal','input-fuel','input-note'];
+    // 주행전
+    const tdBefore = document.createElement('td'); const inBefore = document.createElement('input'); inBefore.type='number'; inBefore.className='cell input-before'; tdBefore.appendChild(inBefore); tr.appendChild(tdBefore);
+    // 주행후
+    const tdAfter = document.createElement('td'); const inAfter = document.createElement('input'); inAfter.type='number'; inAfter.className='cell input-after'; tdAfter.appendChild(inAfter); tr.appendChild(tdAfter);
+    // 거리
+    const tdDist = document.createElement('td'); tdDist.className='right auto-dist'; tdDist.textContent='0'; tr.appendChild(tdDist);
+    // 출퇴근
+    const tdCommute = document.createElement('td'); const inCommute = document.createElement('input'); inCommute.type='number'; inCommute.className='cell input-commute'; tdCommute.appendChild(inCommute); tr.appendChild(tdCommute);
+    // 일반업무
+    const tdWork = document.createElement('td'); const inWork = document.createElement('input'); inWork.type='number'; inWork.className='cell input-work'; tdWork.appendChild(inWork); tr.appendChild(tdWork);
+    // 개인용
+    const tdPersonal = document.createElement('td'); const inPersonal = document.createElement('input'); inPersonal.type='number'; inPersonal.className='cell input-personal'; tdPersonal.appendChild(inPersonal); tr.appendChild(tdPersonal);
+    // 주유비
+    const tdFuel = document.createElement('td'); const inFuel = document.createElement('input'); inFuel.type='number'; inFuel.className='cell input-fuel'; tdFuel.appendChild(inFuel); tr.appendChild(tdFuel);
+    // 비고
+    const tdNote = document.createElement('td'); const inNote = document.createElement('input'); inNote.type='text'; inNote.className='cell input-note'; tdNote.appendChild(inNote); tr.appendChild(tdNote);
+
+    [inBefore,inAfter,inCommute,inWork,inPersonal,inFuel].forEach(el => el.addEventListener('input', ()=>{ updateRowCalculations(tr); updateSummary(); }));
+
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('deleteRowBtn').addEventListener('click', () => {
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    const toDelete = rows.filter(r => r.querySelector('.row-select').checked);
+    if (toDelete.length === 0) { alert('삭제할 행을 선택하세요.'); return; }
+    if (!confirm(`${toDelete.length}개의 선택된 행을 삭제하시겠습니까?`)) return;
+    toDelete.forEach(r => r.remove());
+    updateSummary();
+  });
+
+  document.getElementById('copyRowBtn').addEventListener('click', () => {
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    const toCopy = rows.filter(r => r.querySelector('.row-select').checked);
+    if (toCopy.length === 0) { alert('복사할 행을 선택하세요.'); return; }
+    toCopy.forEach(r => {
+      const clone = r.cloneNode(true);
+      // 클론된 input 이벤트 재바인딩
+      const inputs = clone.querySelectorAll('input');
+      inputs.forEach(inp => {
+        if (inp.type === 'checkbox') { inp.checked = false; return; }
+        inp.addEventListener('input', () => {
+          updateRowCalculations(clone);
+          updateSummary();
+        });
+      });
+      tbody.appendChild(clone);
+    });
+    updateSummary();
+  });
+
+  // 전체 선택 체크박스
+  document.getElementById('selectAll').addEventListener('change', (e) => {
+    const checked = e.target.checked;
+    document.querySelectorAll('.row-select').forEach(cb => cb.checked = checked);
+  });
+
+  // CSV 내보내기
+  document.getElementById('exportCsvBtn').addEventListener('click', () => {
+    const csv = tableToCSV();
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const y = yearSelect.value || currentYear;
+    const m = String(monthSelect.value || currentMonth).padStart(2,'0');
+    a.download = `carlog_${y}_${m}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  // Excel(xlsx) 내보내기 (SheetJS 사용)
+  document.getElementById('exportXlsxBtn').addEventListener('click', () => {
+    const ws_data = tableToArray(); // 2D array
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(ws_data);
+    XLSX.utils.book_append_sheet(wb, ws, "차량일지");
+    const wbout = XLSX.write(wb, {bookType:'xlsx', type:'array'});
+    const blob = new Blob([wbout], {type:'application/octet-stream'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const y = yearSelect.value || currentYear;
+    const m = String(monthSelect.value || currentMonth).padStart(2,'0');
+    a.href = url; a.download = `carlog_${y}_${m}.xlsx`; a.click(); URL.revokeObjectURL(url);
+  });
+
+  // 테이블 -> CSV 문자열
+  function tableToCSV() {
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    const header = ['일자','요일','주행전','주행후','주행거리','출퇴근','일반업무','개인용','주유비','비고'];
+    const lines = [header.join(',')];
+    rows.forEach(tr => {
+      const date = tr.children[1].textContent.trim();
+      const wd = tr.children[2].textContent.trim();
+      const before = tr.querySelector('.input-before').value || '';
+      const after = tr.querySelector('.input-after').value || '';
+      const dist = tr.querySelector('.auto-dist').textContent || '0';
+      const commute = tr.querySelector('.input-commute').value || '';
+      const work = tr.querySelector('.input-work').value || '';
+      const personal = tr.querySelector('.input-personal').value || '';
+      const fuel = tr.querySelector('.input-fuel').value || '';
+      const note = tr.querySelector('.input-note').value || '';
+      const cols = [csvEscape(date), csvEscape(wd), before, after, dist, commute, work, personal, fuel, csvEscape(note)];
+      lines.push(cols.join(','));
+    });
+    return lines.join('\r\n');
+  }
+
+  function csvEscape(text) {
+    if (text == null) return '';
+    const s = String(text);
+    if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+      return `"${s.replace(/"/g, '""')}"`;
+    }
+    return s;
+  }
+
+  // 테이블 -> 2D array (Excel)
+  function tableToArray() {
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    const header = ['일자','요일','주행전','주행후','주행거리','출퇴근','일반업무','개인용','주유비','비고'];
+    const aoa = [header];
+    rows.forEach(tr => {
+      const date = tr.children[1].textContent.trim();
+      const wd = tr.children[2].textContent.trim();
+      const before = tr.querySelector('.input-before').value || '';
+      const after = tr.querySelector('.input-after').value || '';
+      const dist = tr.querySelector('.auto-dist').textContent || '0';
+      const commute = tr.querySelector('.input-commute').value || '';
+      const work = tr.querySelector('.input-work').value || '';
+      const personal = tr.querySelector('.input-personal').value || '';
+      const fuel = tr.querySelector('.input-fuel').value || '';
+      const note = tr.querySelector('.input-note').value || '';
+      aoa.push([date, wd, before, after, dist, commute, work, personal, fuel, note]);
+    });
+    return aoa;
+  }
+
+  // CSV 불러오기 (파일 선택)
+  document.getElementById('importCsvInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(evt) {
+      const text = evt.target.result;
+      const parsed = parseCSV(text);
+      handleImportedRows(parsed);
+    };
+    reader.readAsText(file, 'utf-8');
+    e.target.value = ''; // 연속 업로드 허용
+  });
+
+  // Excel 불러오기
+  document.getElementById('importXlsxInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(evt) {
+      const data = new Uint8Array(evt.target.result);
+      const workbook = XLSX.read(data, {type:'array'});
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const aoa = XLSX.utils.sheet_to_json(firstSheet, {header:1});
+      // aoa 첫 행 헤더 제거 후 처리
+      const rows = aoa.slice(1).map(r => r.map(c => c == null ? '' : String(c)));
+      handleImportedRows(rows);
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = '';
+  });
+
+  // CSV 파서(간단)
+  function parseCSV(text) {
+    // 간단한 CSV 파서: 줄 단위로 분리하고 큰따옴표 처리
+    const lines = [];
+    const rows = text.split(/\r\n|\n/);
+    // assume first line header
+    for (let i=1;i<rows.length;i++){
+      if (!rows[i].trim()) continue;
+      const row = splitCsvRow(rows[i]);
+      lines.push(row);
+    }
+    return lines;
+  }
+  function splitCsvRow(row) {
+    const res = [];
+    let cur = '', inQuotes = false;
+    for (let i=0;i<row.length;i++){
+      const ch = row[i];
+      if (ch === '"' ) {
+        if (inQuotes && row[i+1] === '"') { cur += '"'; i++; }
+        else inQuotes = !inQuotes;
+      } else if (ch === ',' && !inQuotes) {
+        res.push(cur); cur=''; 
+      } else cur += ch;
+    }
+    res.push(cur);
+    return res;
+  }
+
+  // 불러온 행 처리: rows: 2D array (각 원소는 문자열)
+  function handleImportedRows(rows) {
+    if (!rows || rows.length === 0) { alert('불러올 데이터가 없습니다.'); return; }
+    const mode = importModeEl.value; // merge or replace
+    if (mode === 'replace') tbody.innerHTML = '';
+    rows.forEach(cols => {
+      // 기대 컬럼: [date, wd, before, after, dist, commute, work, personal, fuel, note]
+      const tr = document.createElement('tr');
+      const tdChk = document.createElement('td'); const chk = document.createElement('input'); chk.type='checkbox'; chk.className='row-select'; tdChk.appendChild(chk); tr.appendChild(tdChk);
+
+      const tdDate = document.createElement('td'); tdDate.className='col-date'; tdDate.textContent = cols[0] || ''; tr.appendChild(tdDate);
+      const tdWd = document.createElement('td'); tdWd.textContent = cols[1] || ''; tr.appendChild(tdWd);
+
+      const tdBefore = document.createElement('td'); const inBefore = document.createElement('input'); inBefore.type='number'; inBefore.className='cell input-before'; inBefore.value = cols[2] || ''; tdBefore.appendChild(inBefore); tr.appendChild(tdBefore);
+
+      const tdAfter = document.createElement('td'); const inAfter = document.createElement('input'); inAfter.type='number'; inAfter.className='cell input-after'; inAfter.value = cols[3] || ''; tdAfter.appendChild(inAfter); tr.appendChild(tdAfter);
+
+      const tdDist = document.createElement('td'); tdDist.className='right auto-dist'; tdDist.textContent = cols[4] || '0'; tr.appendChild(tdDist);
+
+      const tdCommute = document.createElement('td'); const inCommute = document.createElement('input'); inCommute.type='number'; inCommute.className='cell input-commute'; inCommute.value = cols[5] || ''; tdCommute.appendChild(inCommute); tr.appendChild(tdCommute);
+
+      const tdWork = document.createElement('td'); const inWork = document.createElement('input'); inWork.type='number'; inWork.className='cell input-work'; inWork.value = cols[6] || ''; tdWork.appendChild(inWork); tr.appendChild(tdWork);
+
+      const tdPersonal = document.createElement('td'); const inPersonal = document.createElement('input'); inPersonal.type='number'; inPersonal.className='cell input-personal'; inPersonal.value = cols[7] || ''; tdPersonal.appendChild(inPersonal); tr.appendChild(tdPersonal);
+
+      const tdFuel = document.createElement('td'); const inFuel = document.createElement('input'); inFuel.type='number'; inFuel.className='cell input-fuel'; inFuel.value = cols[8] || ''; tdFuel.appendChild(inFuel); tr.appendChild(tdFuel);
+
+      const tdNote = document.createElement('td'); const inNote = document.createElement('input'); inNote.type='text'; inNote.className='cell input-note'; inNote.value = cols[9] || ''; tdNote.appendChild(inNote); tr.appendChild(tdNote);
+
+      [inBefore,inAfter,inCommute,inWork,inPersonal,inFuel].forEach(el => el.addEventListener('input', ()=>{ updateRowCalculations(tr); updateSummary(); }));
+
+      // 자동 계산 및 유효성 처리
+      updateRowCalculations(tr);
+      tbody.appendChild(tr);
+    });
+    updateSummary();
+  }
+
+  // 상단 연/월 변경 시 새 테이블 생성(기본은 교체)
+  yearSelect.addEventListener('change', () => {
+    if (confirm('새 월을 선택하면 현재 페이지의 표가 재생성됩니다. 계속하시겠습니까?')) {
+      buildTable(Number(yearSelect.value), Number(monthSelect.value), false);
+    } else {
+      yearSelect.value = currentYear;
+    }
+  });
+  monthSelect.addEventListener('change', () => {
+    if (confirm('새 월을 선택하면 현재 페이지의 표가 재생성됩니다. 계속하시겠습니까?')) {
+      buildTable(Number(yearSelect.value), Number(monthSelect.value), false);
+    } else {
+      monthSelect.value = currentMonth;
+    }
+  });
+
+  // 상단 정보 저장/초기화 (sessionStorage)
+  document.getElementById('saveInfoBtn').addEventListener('click', () => {
+    const data = {
+      year: yearSelect.value, month: monthSelect.value,
+      company: document.getElementById('company').value, department: document.getElementById('department').value,
+      carNo: document.getElementById('carNo').value, empNo: document.getElementById('empNo').value,
+      userName: document.getElementById('userName').value
+    };
+    sessionStorage.setItem('carlog_info', JSON.stringify(data));
+    alert('상단 정보가 저장되었습니다.');
+  });
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    if (confirm('상단 입력값을 초기화하시겠습니까?')) {
+      ['company','department','carNo','empNo','userName'].forEach(id => document.getElementById(id).value='');
+      sessionStorage.removeItem('carlog_info');
+    }
+  });
+  window.addEventListener('load', () => {
+    const saved = sessionStorage.getItem('carlog_info');
+    if (saved) {
+      try {
+        const d = JSON.parse(saved);
+        if (d.year) yearSelect.value = d.year;
+        if (d.month) monthSelect.value = d.month;
+        document.getElementById('company').value = d.company || '';
+        document.getElementById('department').value = d.department || '';
+        document.getElementById('carNo').value = d.carNo || '';
+        document.getElementById('empNo').value = d.empNo || '';
+        document.getElementById('userName').value = d.userName || '';
+      } catch(e){}
+    }
+    buildTable(currentYear, currentMonth, false);
+  });
+
+  // 추가: CSV/Excel을 불러올 때 컬럼 수 검사 등 간단한 유효성 안내는 alert로 처리
+  // 필요 시 불러올 때 매핑 UI(컬럼 지정) 추가 가능
+</script>
+</body>
+</html>

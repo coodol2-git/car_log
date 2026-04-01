@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
-<title>Car Log (Mobile)</title>
+<title>Car Log (Mobile) - No Delete Button</title>
 <style>
   :root{
     --yellow:#ffd700;
@@ -20,11 +20,10 @@
   .btn.primary{background:#0078d4;color:white}
   .btn.ghost{background:white;border:1px solid var(--border);color:#333}
 
-  /* 리스트 영역 */
-  .list{padding:8px 10px;max-height:62vh;overflow:auto}
+  /* list area */
+  .list{padding:8px 10px;max-height:62vh;overflow:auto;-webkit-overflow-scrolling:touch;}
 
-  /* row: 4 visible columns (no separate action column) */
-  /* columns: Date | Distance | Fuel | Note(with delete icon) */
+  /* row: Date | Distance | Fuel | Note */
   .row{
     display:grid;
     grid-template-columns: 1fr 82px 82px 1.1fr;
@@ -35,6 +34,8 @@
     border-radius:8px;
     background:linear-gradient(#fff,#fff);
     border:1px solid transparent;
+    user-select:none;
+    -webkit-user-select:none;
   }
   .row:nth-child(even){ background:var(--muted); }
 
@@ -50,23 +51,12 @@
     min-height:var(--touch);
   }
 
-  /* Note cell: contains input plus delete button overlay on the right */
-  .note-wrap{position:relative; display:flex; align-items:center;}
-  .note-wrap input[type="text"]{ padding-right:36px; } /* space for delete */
-  .del-btn {
-    position:absolute;
-    right:6px;
-    top:50%;
-    transform:translateY(-50%);
-    width:30px;height:30px;border-radius:6px;border:0;background:#ff6b6b;color:#fff;font-weight:700;cursor:pointer;
-    display:flex;align-items:center;justify-content:center;font-size:14px;
-  }
+  /* hint overlay when long-press active */
+  .row.longpress { outline: 2px dashed #0078d4; }
 
-  /* small screen tweak */
   @media (max-width:360px){
     .row{ grid-template-columns: 1fr 72px 72px 1fr; gap:6px; }
     input[type="date"], input[type="number"], input[type="text"]{ padding:7px; font-size:13px; }
-    .del-btn{ width:28px;height:28px;font-size:13px;right:4px;}
   }
 
   .summary{padding:10px 12px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center}
@@ -88,8 +78,8 @@
     </label>
   </div>
 
-  <div class="list" id="list">
-    <!-- rows go here -->
+  <div class="list" id="list" aria-live="polite">
+    <!-- rows -->
   </div>
 
   <div class="summary">
@@ -103,12 +93,12 @@
     </div>
   </div>
 
-  <div class="note-bottom">Tip: On iPhone, use Share → Add to Home Screen to create a shortcut.</div>
+  <div class="note-bottom">Tip: Long-press a row (~0.7s) to delete it. On iPhone use Share → Add to Home Screen to create a shortcut.</div>
 </div>
 
 <script>
 /* Storage key and expiry */
-const STORAGE_KEY = 'carlog_grid4_v1';
+const STORAGE_KEY = 'carlog_no_delbtn_v1';
 const EXPIRE_DAYS = 365;
 
 /* DOM */
@@ -136,10 +126,11 @@ function loadAll(){
 }
 function numberWithCommas(x){ return String(x).replace(/\B(?=(\d{3})+(?!\d))/g, ","); }
 
-/* Create a row: Date | Distance | Fuel | Note(with delete) */
+/* Create a row: Date | Distance | Fuel | Note */
 function createRow(data){
   const row = document.createElement('div');
   row.className = 'row';
+  row.setAttribute('role','group');
 
   // Date column
   const colDate = document.createElement('div'); colDate.className = 'col';
@@ -159,15 +150,11 @@ function createRow(data){
   const fuelIn = document.createElement('input'); fuelIn.type = 'number'; fuelIn.placeholder='0';
   colFuel.appendChild(lblFuel); colFuel.appendChild(fuelIn);
 
-  // Note column (input + delete button overlay)
+  // Note column
   const colNote = document.createElement('div'); colNote.className = 'col';
   const lblNote = document.createElement('label'); lblNote.textContent = 'Note';
-  const noteWrap = document.createElement('div'); noteWrap.className = 'note-wrap';
   const noteIn = document.createElement('input'); noteIn.type = 'text'; noteIn.placeholder='Remark';
-  const delBtn = document.createElement('button'); delBtn.className = 'del-btn'; delBtn.type='button'; delBtn.title='Delete';
-  delBtn.textContent = '×';
-  noteWrap.appendChild(noteIn); noteWrap.appendChild(delBtn);
-  colNote.appendChild(lblNote); colNote.appendChild(noteWrap);
+  colNote.appendChild(lblNote); colNote.appendChild(noteIn);
 
   // Initial values
   if(data){
@@ -177,9 +164,19 @@ function createRow(data){
     noteIn.value = data.note || '';
   }
 
-  // Events
+  // Events: input -> save & summary
   [dateIn, distIn, fuelIn, noteIn].forEach(el => el.addEventListener('input', ()=>{ persist(); updateSummary(); }));
-  delBtn.addEventListener('click', ()=>{ row.remove(); persist(); updateSummary(); });
+
+  // Long-press deletion (touch & mouse)
+  addLongPressListener(row, 700, () => {
+    // show confirm
+    const dateLabel = row.querySelector('input[type="date"]').value || '(no date)';
+    if (confirm(`Delete row for ${dateLabel}?`)) {
+      row.remove();
+      persist();
+      updateSummary();
+    }
+  });
 
   row.appendChild(colDate);
   row.appendChild(colDist);
@@ -187,6 +184,45 @@ function createRow(data){
   row.appendChild(colNote);
 
   return row;
+}
+
+/* Long press utility: element, ms, callback */
+function addLongPressListener(el, ms, callback){
+  let timer = null;
+  let moved = false;
+
+  const start = (e) => {
+    moved = false;
+    el.classList.add('longpress');
+    timer = setTimeout(()=> {
+      callback();
+      cleanup();
+    }, ms);
+  };
+  const move = (e) => {
+    moved = true;
+    if (timer) { clearTimeout(timer); timer = null; el.classList.remove('longpress'); }
+  };
+  const end = (e) => {
+    if (timer) { clearTimeout(timer); timer = null; el.classList.remove('longpress'); }
+  };
+  const cleanup = () => { if (timer) { clearTimeout(timer); timer = null; } el.classList.remove('longpress'); };
+
+  // Touch events
+  el.addEventListener('touchstart', start, {passive:true});
+  el.addEventListener('touchmove', move, {passive:true});
+  el.addEventListener('touchend', end);
+  el.addEventListener('touchcancel', end);
+
+  // Mouse events for desktop
+  el.addEventListener('mousedown', (e) => {
+    // only left button
+    if (e.button !== 0) return;
+    start(e);
+  });
+  el.addEventListener('mousemove', (e) => { if (timer) move(e); });
+  el.addEventListener('mouseup', end);
+  el.addEventListener('mouseleave', end);
 }
 
 /* Render, persist, summary */
@@ -249,7 +285,7 @@ function exportCSV(){
   URL.revokeObjectURL(url);
 }
 
-/* CSV import (simple, replace mode) */
+/* CSV import */
 function parseCSV(text){
   const rows = text.split(/\r\n|\n/).filter(r=>r.trim());
   if(rows.length <= 1) return [];

@@ -3,9 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
-<title>차량일지(모바일 단순형)</title>
+<title>차량일지(단순·날짜통합)</title>
 <style>
-  /* iPhone13 mini 기준 폭 375px 최적화 + 반응형 */
   :root{--yellow:#ffd700;--muted:#f4f6f7;--border:#dfe7ea;}
   html,body{height:100%;margin:0;font-family:"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;background:#fafbfd;color:#222}
   .wrap{max-width:420px;margin:12px auto;background:#fff;border:1px solid var(--border);border-radius:8px;overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,0.04)}
@@ -16,32 +15,30 @@
   .btn.primary{background:#0078d4;color:white}
   .btn.ghost{background:white;border:1px solid var(--border);color:#333}
   .list{padding:8px 12px;max-height:62vh;overflow:auto}
-  .row{display:flex;gap:8px;align-items:center;padding:8px;margin-bottom:8px;border-radius:8px;background:linear-gradient(#fff,#fff);border:1px solid transparent}
+  .row{display:flex;gap:8px;align-items:flex-start;padding:8px;margin-bottom:8px;border-radius:8px;background:linear-gradient(#fff,#fff);border:1px solid transparent}
   .row:nth-child(even){background:var(--muted)}
-  .row .col{font-size:13px}
-  .col.small{width:58px}
-  .col.date{display:flex;flex-direction:column;gap:4px}
-  input[type="number"], input[type="text"], select {width:100%;box-sizing:border-box;padding:8px;border:1px solid #e3e9ec;border-radius:6px;font-size:13px}
-  input[type="text"].small,input[type="number"].small{padding:6px}
-  .row .note{flex:1}
-  .row .actions{display:flex;flex-direction:column;gap:6px}
-  .smallbtn{padding:6px 8px;border-radius:6px;border:0;font-weight:700;font-size:12px;cursor:pointer}
+  .col{font-size:13px;display:flex;flex-direction:column;gap:6px}
+  .col.date{width:120px}
+  .col.number{width:80px}
+  input[type="date"], input[type="number"], input[type="text"] {width:100%;box-sizing:border-box;padding:8px;border:1px solid #e3e9ec;border-radius:6px;font-size:13px}
+  .note{flex:1}
+  .actions{display:flex;flex-direction:column;gap:6px}
+  .smallbtn{padding:8px;border-radius:6px;border:0;font-weight:700;font-size:12px;cursor:pointer}
   .smallbtn.danger{background:#ff6b6b;color:#fff}
   .summary{padding:10px 12px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center}
   .summary .info{flex:1;background:#fff;border:1px solid var(--border);padding:8px;border-radius:6px;text-align:center}
   .summary .info p{margin:0;font-weight:700;font-size:14px}
-  .note{font-size:12px;color:#666;padding:8px 12px}
-  /* 모바일 터치 편의 */
+  .note-bottom{font-size:12px;color:#666;padding:8px 12px}
   button,input,select{touch-action:manipulation}
   @media (max-width:380px){
-    .controls .btn{font-size:13px;padding:9px}
-    .col.small{width:52px}
+    .col.date{width:110px}
+    .col.number{width:70px}
   }
 </style>
 </head>
 <body>
-<div class="wrap" role="application" aria-label="차량일지 모바일 단순형">
-  <header><h1>차량일지 (모바일 단순형)</h1></header>
+<div class="wrap" role="application" aria-label="차량일지 단순형">
+  <header><h1>차량일지 (단순형)</h1></header>
 
   <div class="controls">
     <button id="addBtn" class="btn primary">행 추가</button>
@@ -51,9 +48,7 @@
     </label>
   </div>
 
-  <div class="list" id="list">
-    <!-- 행들이 이곳에 추가됩니다 -->
-  </div>
+  <div class="list" id="list"></div>
 
   <div class="summary">
     <div class="info">
@@ -66,12 +61,12 @@
     </div>
   </div>
 
-  <div class="note">팁: iPhone에서 '공유 → 홈 화면에 추가'하면 앱처럼 사용 가능합니다.</div>
+  <div class="note-bottom">팁: iPhone에서 '공유 → 홈 화면에 추가'하면 앱처럼 사용 가능합니다.</div>
 </div>
 
 <script>
 /* 설정 */
-const STORAGE_KEY = 'mobile_carlog_v1';
+const STORAGE_KEY = 'mobile_carlog_simple_v1';
 const EXPIRE_DAYS = 365;
 
 /* DOM */
@@ -104,21 +99,19 @@ function createRow(data){
   const container = document.createElement('div');
   container.className = 'row';
 
-  // 날짜: 연/월/일 select/number
-  const dateCol = document.createElement('div'); dateCol.className='col date small';
-  const year = document.createElement('input'); year.type='number'; year.className='small'; year.placeholder='YYYY'; year.style.width='100%';
-  const month = document.createElement('input'); month.type='number'; month.className='small'; month.placeholder='MM'; month.style.width='100%';
-  const day = document.createElement('input'); day.type='number'; day.className='small'; day.placeholder='DD'; day.style.width='100%';
-  dateCol.appendChild(year); dateCol.appendChild(month); dateCol.appendChild(day);
+  // 날짜 (single cell: date)
+  const dateCol = document.createElement('div'); dateCol.className='col date';
+  const dateInput = document.createElement('input'); dateInput.type='date';
+  dateCol.appendChild(dateInput);
 
   // 운행거리
-  const distanceCol = document.createElement('div'); distanceCol.className='col small';
-  const distance = document.createElement('input'); distance.type='number'; distance.className='small'; distance.placeholder='km';
+  const distanceCol = document.createElement('div'); distanceCol.className='col number';
+  const distance = document.createElement('input'); distance.type='number'; distance.placeholder='km';
   distanceCol.appendChild(distance);
 
   // 주유비
-  const fuelCol = document.createElement('div'); fuelCol.className='col small';
-  const fuel = document.createElement('input'); fuel.type='number'; fuel.className='small'; fuel.placeholder='₩';
+  const fuelCol = document.createElement('div'); fuelCol.className='col number';
+  const fuel = document.createElement('input'); fuel.type='number'; fuel.placeholder='₩';
   fuelCol.appendChild(fuel);
 
   // 비고
@@ -126,7 +119,7 @@ function createRow(data){
   const note = document.createElement('input'); note.type='text'; note.placeholder='비고';
   noteCol.appendChild(note);
 
-  // 액션
+  // 액션 (삭제)
   const actions = document.createElement('div'); actions.className='actions';
   const delBtn = document.createElement('button'); delBtn.className='smallbtn danger'; delBtn.textContent='삭제';
   actions.appendChild(delBtn);
@@ -137,18 +130,16 @@ function createRow(data){
   container.appendChild(noteCol);
   container.appendChild(actions);
 
-  // 초기값 세팅
+  // 초기값
   if(data){
-    year.value = data.year||'';
-    month.value = data.month||'';
-    day.value = data.day||'';
+    if(data.date) dateInput.value = data.date;
     distance.value = data.distance||'';
     fuel.value = data.fuel||'';
     note.value = data.note||'';
   }
 
   // 이벤트: 변경 시 저장 및 합계 갱신
-  [year,month,day,distance,fuel,note].forEach(el => {
+  [dateInput,distance,fuel,note].forEach(el => {
     el.addEventListener('input', ()=>{ persist(); updateSummary(); });
   });
 
@@ -157,12 +148,11 @@ function createRow(data){
   return container;
 }
 
-/* 로컬 -> DOM 렌더 */
+/* 렌더 */
 function renderAll(){
   listEl.innerHTML = '';
   const items = loadAll();
   if(items.length === 0){
-    // 기본 한 행 표시
     listEl.appendChild(createRow());
   } else {
     items.forEach(it => listEl.appendChild(createRow(it)));
@@ -170,26 +160,21 @@ function renderAll(){
   updateSummary();
 }
 
-/* DOM -> 로컬 저장 */
+/* 저장 */
 function persist(){
   const rows = Array.from(listEl.querySelectorAll('.row'));
   const items = rows.map(r=>{
-    const [yearEl,monthEl,dayEl] = r.querySelectorAll('.date input');
-    const distanceEl = r.querySelector('input[type="number"]');
-    // 주의: 첫 number은 운행거리, 두번째는 주유비. 찾기 위해 순서 사용
+    const date = r.querySelector('input[type="date"]').value || '';
     const nums = r.querySelectorAll('input[type="number"]');
     const dist = nums[0] ? nums[0].value : '';
     const fuel = nums[1] ? nums[1].value : '';
-    return {
-      year: yearEl.value||'', month: monthEl.value||'', day: dayEl.value||'',
-      distance: dist, fuel: fuel,
-      note: (r.querySelector('input[type="text"]')||{value:''}).value || ''
-    };
+    const note = r.querySelector('input[type="text"]').value || '';
+    return {date, distance: dist, fuel: fuel, note};
   });
   saveAll(items);
 }
 
-/* 합계 계산 */
+/* 합계 */
 function updateSummary(){
   const rows = Array.from(listEl.querySelectorAll('.row'));
   let totalDist = 0, totalFuel = 0;
@@ -204,37 +189,34 @@ function updateSummary(){
   sumFuelEl.textContent = numberWithCommas(totalFuel);
 }
 
-/* CSV 내보내기 */
+/* CSV export */
 function exportCSV(){
   const rows = Array.from(listEl.querySelectorAll('.row'));
-  const header = ['연도','월','일','운행거리','주유비','비고'];
+  const header = ['날짜','운행거리','주유비','비고'];
   const lines = [header.join(',')];
   rows.forEach(r=>{
-    const inputs = r.querySelectorAll('input');
-    const year = inputs[0].value||'';
-    const month = inputs[1].value||'';
-    const day = inputs[2].value||'';
-    const dist = inputs[3].value||'';
-    const fuel = inputs[4].value||'';
-    const note = inputs[5].value||'';
+    const date = (r.querySelector('input[type="date"]').value || '');
+    const nums = r.querySelectorAll('input[type="number"]');
+    const dist = nums[0] ? nums[0].value : '';
+    const fuel = nums[1] ? nums[1].value : '';
+    const note = r.querySelector('input[type="text"]').value || '';
     const esc = v => (v+'').includes(',')||(''+v).includes('"') ? `"${(''+v).replace(/"/g,'""')}"` : v;
-    lines.push([esc(year),esc(month),esc(day),esc(dist),esc(fuel),esc(note)].join(','));
+    lines.push([esc(date),esc(dist),esc(fuel),esc(note)].join(','));
   });
   const blob = new Blob([lines.join('\r\n')], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = `carlog_mobile_${new Date().toISOString().slice(0,10)}.csv`; a.click();
+  a.href = url; a.download = `carlog_simple_${new Date().toISOString().slice(0,10)}.csv`; a.click();
   URL.revokeObjectURL(url);
 }
 
-/* CSV 불러오기 (간단 파서) */
+/* CSV import (교체 모드) */
 function parseCSV(text){
   const rows = text.split(/\r\n|\n/).filter(r=>r.trim());
   if(rows.length <= 1) return [];
   const data = [];
   for(let i=1;i<rows.length;i++){
     const line = rows[i];
-    // 간단한 split(큰따옴표 처리 최소한)
     const cols = [];
     let cur='', inQ=false;
     for(let j=0;j<line.length;j++){
@@ -246,30 +228,27 @@ function parseCSV(text){
       else cur += ch;
     }
     cols.push(cur);
-    data.push({
-      year: cols[0]||'', month: cols[1]||'', day: cols[2]||'',
-      distance: cols[3]||'', fuel: cols[4]||'', note: cols[5]||''
-    });
+    // expecting: date, distance, fuel, note
+    data.push({ date: cols[0]||'', distance: cols[1]||'', fuel: cols[2]||'', note: cols[3]||'' });
   }
   return data;
 }
 
-/* 이벤트 바인딩 */
+/* 바인딩 */
 addBtn.addEventListener('click', ()=>{ listEl.appendChild(createRow()); persist(); updateSummary(); });
 exportBtn.addEventListener('click', exportCSV);
 importFile.addEventListener('change', (e)=>{
   const f = e.target.files[0]; if(!f) return;
   const reader = new FileReader();
-  reader.onload = (ev)=>{ const parsed = parseCSV(ev.target.result); if(parsed.length===0){ alert('불러올 데이터가 없습니다.'); return; } // replace mode
+  reader.onload = (ev)=>{ const parsed = parseCSV(ev.target.result); if(parsed.length===0){ alert('불러올 데이터가 없습니다.'); return; }
     listEl.innerHTML=''; parsed.forEach(d=>listEl.appendChild(createRow(d))); persist(); updateSummary();
   };
   reader.readAsText(f,'utf-8'); e.target.value='';
 });
 
-/* 초기 렌더 */
+/* 초기 */
 renderAll();
-
-/* 가끔 UI 변화가 저장 안되는 경우 대비 autosave */
+/* autosave */
 setInterval(()=>{ persist(); }, 5000);
 </script>
 </body>

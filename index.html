@@ -3,70 +3,106 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
-<title>차량일지(단순·날짜통합)</title>
+<title>차량일지(모바일 · 정렬된 칸간격)</title>
 <style>
-  :root{--yellow:#ffd700;--muted:#f4f6f7;--border:#dfe7ea;}
+  :root{
+    --yellow:#ffd700;
+    --muted:#f4f6f7;
+    --border:#dfe7ea;
+    --touch:44px; /* 터치 높이 최소 권장 */
+  }
   html,body{height:100%;margin:0;font-family:"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;background:#fafbfd;color:#222}
-  .wrap{max-width:420px;margin:12px auto;background:#fff;border:1px solid var(--border);border-radius:8px;overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,0.04)}
-  header{background:var(--yellow);padding:12px 16px;border-bottom:3px solid #e6c200}
+  .wrap{width:100%;max-width:420px;margin:10px auto;background:#fff;border:1px solid var(--border);border-radius:8px;overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,0.04)}
+  header{background:var(--yellow);padding:12px 14px;border-bottom:3px solid #e6c200}
   header h1{margin:0;font-size:18px;text-align:center;font-weight:700}
   .controls{display:flex;gap:8px;padding:10px 12px;align-items:center;flex-wrap:wrap}
   .controls .btn{flex:1;padding:10px;border-radius:8px;border:0;font-weight:700;font-size:14px;cursor:pointer}
   .btn.primary{background:#0078d4;color:white}
   .btn.ghost{background:white;border:1px solid var(--border);color:#333}
-  .list{padding:8px 12px;max-height:62vh;overflow:auto}
-  .row{display:flex;gap:8px;align-items:flex-start;padding:8px;margin-bottom:8px;border-radius:8px;background:linear-gradient(#fff,#fff);border:1px solid transparent}
-  .row:nth-child(even){background:var(--muted)}
-  .col{font-size:13px;display:flex;flex-direction:column;gap:6px}
-  .col.date{width:120px}
-  .col.number{width:80px}
-  input[type="date"], input[type="number"], input[type="text"] {width:100%;box-sizing:border-box;padding:8px;border:1px solid #e3e9ec;border-radius:6px;font-size:13px}
-  .note{flex:1}
-  .actions{display:flex;flex-direction:column;gap:6px}
+
+  /* 리스트 영역(스크롤) */
+  .list{padding:8px 10px;max-height:62vh;overflow:auto}
+
+  /* 행 레이아웃: CSS Grid로 고정 칸폭 할당 */
+  .row{
+    display:grid;
+    grid-template-columns: 1fr 90px 90px 1.2fr 48px;
+    gap:8px;
+    align-items:start;
+    padding:8px;
+    margin-bottom:8px;
+    border-radius:8px;
+    background:linear-gradient(#fff,#fff);
+    border:1px solid transparent;
+  }
+  /* 짝수행 배경 */
+  .row:nth-child(even){ background:var(--muted); }
+
+  /* 각 칸 내부 정렬 */
+  .col{font-size:13px; display:flex; flex-direction:column; gap:6px;}
+  .col label{font-size:11px;color:#666}
+  input[type="date"], input[type="number"], input[type="text"] {
+    width:100%;
+    box-sizing:border-box;
+    padding:8px;
+    border:1px solid #e3e9ec;
+    border-radius:6px;
+    font-size:14px;
+    min-height:var(--touch);
+  }
+
+  /* 삭제 버튼 칸(마지막) 중앙 정렬 */
+  .col.actions{display:flex;align-items:center;justify-content:center;padding:0;margin:0}
   .smallbtn{padding:8px;border-radius:6px;border:0;font-weight:700;font-size:12px;cursor:pointer}
-  .smallbtn.danger{background:#ff6b6b;color:#fff}
+  .smallbtn.danger{background:#ff6b6b;color:#fff;width:40px;height:40px;border-radius:6px}
+
+  /* 반응형: 화면 매우 좁을 때 그리드 비율 재조정 */
+  @media (max-width:360px){
+    .row{ grid-template-columns: 1fr 76px 76px 1fr 44px; gap:6px; }
+    input[type="date"], input[type="number"], input[type="text"]{ padding:7px; font-size:13px; }
+  }
+
+  /* 합계영역 */
   .summary{padding:10px 12px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center}
   .summary .info{flex:1;background:#fff;border:1px solid var(--border);padding:8px;border-radius:6px;text-align:center}
   .summary .info p{margin:0;font-weight:700;font-size:14px}
   .note-bottom{font-size:12px;color:#666;padding:8px 12px}
   button,input,select{touch-action:manipulation}
-  @media (max-width:380px){
-    .col.date{width:110px}
-    .col.number{width:70px}
-  }
 </style>
 </head>
 <body>
-<div class="wrap" role="application" aria-label="차량일지 단순형">
-  <header><h1>차량일지 (단순형)</h1></header>
+<div class="wrap" role="application" aria-label="차량일지">
+  <header><h1>차량일지 (모바일)</h1></header>
 
   <div class="controls">
-    <button id="addBtn" class="btn primary">행 추가</button>
-    <button id="exportBtn" class="btn ghost">CSV 내보내기</button>
+    <button id="addBtn" class="btn primary">Add Row</button>
+    <button id="exportBtn" class="btn ghost">Export CSV</button>
     <label class="btn ghost" style="display:inline-flex;align-items:center;gap:8px;cursor:pointer">
-      불러오기<input id="importFile" type="file" accept=".csv,text/csv" style="display:none">
+      Import<input id="importFile" type="file" accept=".csv,text/csv" style="display:none">
     </label>
   </div>
 
-  <div class="list" id="list"></div>
+  <div class="list" id="list">
+    <!-- rows injected here -->
+  </div>
 
   <div class="summary">
     <div class="info">
-      <div style="font-size:12px;color:#666">총 운행거리 합계</div>
+      <div style="font-size:12px;color:#666">Total Distance</div>
       <p id="sumDistance">0</p>
     </div>
     <div class="info">
-      <div style="font-size:12px;color:#666">총 주유비</div>
+      <div style="font-size:12px;color:#666">Total Fuel</div>
       <p id="sumFuel">0</p>
     </div>
   </div>
 
-  <div class="note-bottom">팁: iPhone에서 '공유 → 홈 화면에 추가'하면 앱처럼 사용 가능합니다.</div>
+  <div class="note-bottom">Tip: On iPhone, use Share → Add to Home Screen to create a shortcut.</div>
 </div>
 
 <script>
-/* 설정 */
-const STORAGE_KEY = 'mobile_carlog_simple_v1';
+/* 저장 키 및 만료 */
+const STORAGE_KEY = 'mobile_carlog_grid_v1';
 const EXPIRE_DAYS = 365;
 
 /* DOM */
@@ -77,9 +113,9 @@ const importFile = document.getElementById('importFile');
 const sumDistanceEl = document.getElementById('sumDistance');
 const sumFuelEl = document.getElementById('sumFuel');
 
-/* 유틸 */
+/* 유틸: 로컬 저장(만료 포함) */
 function saveAll(items){
-  const payload = {savedAt: Date.now(),items};
+  const payload = { savedAt: Date.now(), items };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
 }
 function loadAll(){
@@ -94,61 +130,64 @@ function loadAll(){
 }
 function numberWithCommas(x){ return String(x).replace(/\B(?=(\d{3})+(?!\d))/g, ","); }
 
-/* 행 생성 (data optional) */
+/* 행 생성: Grid 열 순서 = [Date | Distance | Fuel | Note | Action] */
 function createRow(data){
-  const container = document.createElement('div');
-  container.className = 'row';
+  const row = document.createElement('div');
+  row.className = 'row';
 
-  // 날짜 (single cell: date)
-  const dateCol = document.createElement('div'); dateCol.className='col date';
-  const dateInput = document.createElement('input'); dateInput.type='date';
-  dateCol.appendChild(dateInput);
+  // Date
+  const colDate = document.createElement('div'); colDate.className = 'col';
+  const lblDate = document.createElement('label'); lblDate.textContent = 'Date';
+  const dateIn = document.createElement('input'); dateIn.type = 'date';
+  colDate.appendChild(lblDate); colDate.appendChild(dateIn);
 
-  // 운행거리
-  const distanceCol = document.createElement('div'); distanceCol.className='col number';
-  const distance = document.createElement('input'); distance.type='number'; distance.placeholder='km';
-  distanceCol.appendChild(distance);
+  // Distance
+  const colDist = document.createElement('div'); colDist.className = 'col';
+  const lblDist = document.createElement('label'); lblDist.textContent = 'Distance (km)';
+  const distIn = document.createElement('input'); distIn.type = 'number'; distIn.placeholder='0';
+  colDist.appendChild(lblDist); colDist.appendChild(distIn);
 
-  // 주유비
-  const fuelCol = document.createElement('div'); fuelCol.className='col number';
-  const fuel = document.createElement('input'); fuel.type='number'; fuel.placeholder='₩';
-  fuelCol.appendChild(fuel);
+  // Fuel
+  const colFuel = document.createElement('div'); colFuel.className = 'col';
+  const lblFuel = document.createElement('label'); lblFuel.textContent = 'Fuel (₩)';
+  const fuelIn = document.createElement('input'); fuelIn.type = 'number'; fuelIn.placeholder='0';
+  colFuel.appendChild(lblFuel); colFuel.appendChild(fuelIn);
 
-  // 비고
-  const noteCol = document.createElement('div'); noteCol.className='col note';
-  const note = document.createElement('input'); note.type='text'; note.placeholder='비고';
-  noteCol.appendChild(note);
+  // Note
+  const colNote = document.createElement('div'); colNote.className = 'col';
+  const lblNote = document.createElement('label'); lblNote.textContent = 'Note';
+  const noteIn = document.createElement('input'); noteIn.type = 'text'; noteIn.placeholder='Remark';
+  colNote.appendChild(lblNote); colNote.appendChild(noteIn);
 
-  // 액션 (삭제)
-  const actions = document.createElement('div'); actions.className='actions';
-  const delBtn = document.createElement('button'); delBtn.className='smallbtn danger'; delBtn.textContent='삭제';
-  actions.appendChild(delBtn);
+  // Action
+  const colAct = document.createElement('div'); colAct.className = 'col actions';
+  const delBtn = document.createElement('button'); delBtn.className='smallbtn danger'; delBtn.title='Delete';
+  delBtn.textContent = 'Del';
+  colAct.appendChild(delBtn);
 
-  container.appendChild(dateCol);
-  container.appendChild(distanceCol);
-  container.appendChild(fuelCol);
-  container.appendChild(noteCol);
-  container.appendChild(actions);
-
-  // 초기값
+  // 초기값 적용
   if(data){
-    if(data.date) dateInput.value = data.date;
-    distance.value = data.distance||'';
-    fuel.value = data.fuel||'';
-    note.value = data.note||'';
+    if(data.date) dateIn.value = data.date;
+    distIn.value = data.distance || '';
+    fuelIn.value = data.fuel || '';
+    noteIn.value = data.note || '';
   }
 
-  // 이벤트: 변경 시 저장 및 합계 갱신
-  [dateInput,distance,fuel,note].forEach(el => {
-    el.addEventListener('input', ()=>{ persist(); updateSummary(); });
-  });
+  // 변경 이벤트: 저장 및 합계 갱신
+  [dateIn, distIn, fuelIn, noteIn].forEach(el => el.addEventListener('input', ()=>{ persist(); updateSummary(); }));
 
-  delBtn.addEventListener('click', ()=>{ container.remove(); persist(); updateSummary(); });
+  delBtn.addEventListener('click', ()=>{ row.remove(); persist(); updateSummary(); });
 
-  return container;
+  row.appendChild(colDate);
+  row.appendChild(colDist);
+  row.appendChild(colFuel);
+  row.appendChild(colNote);
+  row.appendChild(colAct);
+
+  return row;
 }
 
-/* 렌더 */
+/* 렌더링 및 저장/합계 로직 */
 function renderAll(){
   listEl.innerHTML = '';
   const items = loadAll();
@@ -159,8 +198,6 @@ function renderAll(){
   }
   updateSummary();
 }
-
-/* 저장 */
 function persist(){
   const rows = Array.from(listEl.querySelectorAll('.row'));
   const items = rows.map(r=>{
@@ -169,12 +206,10 @@ function persist(){
     const dist = nums[0] ? nums[0].value : '';
     const fuel = nums[1] ? nums[1].value : '';
     const note = r.querySelector('input[type="text"]').value || '';
-    return {date, distance: dist, fuel: fuel, note};
+    return { date, distance: dist, fuel: fuel, note };
   });
   saveAll(items);
 }
-
-/* 합계 */
 function updateSummary(){
   const rows = Array.from(listEl.querySelectorAll('.row'));
   let totalDist = 0, totalFuel = 0;
@@ -189,10 +224,10 @@ function updateSummary(){
   sumFuelEl.textContent = numberWithCommas(totalFuel);
 }
 
-/* CSV export (English headers + BOM for Excel) */
+/* CSV export (English headers + BOM) */
 function exportCSV(){
   const rows = Array.from(listEl.querySelectorAll('.row'));
-  const header = ['Date','Distance','Fuel','Note']; // English headers
+  const header = ['Date','Distance','Fuel','Note'];
   const lines = [header.join(',')];
   rows.forEach(r=>{
     const date = (r.querySelector('input[type="date"]').value || '');
@@ -204,33 +239,29 @@ function exportCSV(){
     lines.push([esc(date),esc(dist),esc(fuel),esc(note)].join(','));
   });
   const csvContent = lines.join('\r\n');
-  const bom = '\uFEFF'; // UTF-8 BOM to help Excel recognize UTF-8
+  const bom = '\uFEFF';
   const blob = new Blob([bom + csvContent], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = `carlog_simple_${new Date().toISOString().slice(0,10)}.csv`; a.click();
+  a.href = url; a.download = `carlog_grid_${new Date().toISOString().slice(0,10)}.csv`; a.click();
   URL.revokeObjectURL(url);
 }
 
-/* CSV import (교체 모드) */
+/* CSV import (simple parser & replace mode) */
 function parseCSV(text){
   const rows = text.split(/\r\n|\n/).filter(r=>r.trim());
   if(rows.length <= 1) return [];
   const data = [];
   for(let i=1;i<rows.length;i++){
     const line = rows[i];
-    const cols = [];
-    let cur='', inQ=false;
+    const cols = []; let cur='', inQ=false;
     for(let j=0;j<line.length;j++){
       const ch = line[j];
-      if(ch === '"' ){
-        if(inQ && line[j+1]==='"'){ cur+='"'; j++; }
-        else inQ = !inQ;
-      } else if(ch === ',' && !inQ){ cols.push(cur); cur=''; }
+      if(ch === '"' ){ if(inQ && line[j+1]==='"'){ cur+='"'; j++; } else inQ = !inQ; }
+      else if(ch === ',' && !inQ){ cols.push(cur); cur=''; }
       else cur += ch;
     }
     cols.push(cur);
-    // expecting: date, distance, fuel, note
     data.push({ date: cols[0]||'', distance: cols[1]||'', fuel: cols[2]||'', note: cols[3]||'' });
   }
   return data;
@@ -242,15 +273,15 @@ exportBtn.addEventListener('click', exportCSV);
 importFile.addEventListener('change', (e)=>{
   const f = e.target.files[0]; if(!f) return;
   const reader = new FileReader();
-  reader.onload = (ev)=>{ const parsed = parseCSV(ev.target.result); if(parsed.length===0){ alert('불러올 데이터가 없습니다.'); return; }
+  reader.onload = (ev)=>{ const parsed = parseCSV(ev.target.result); if(parsed.length===0){ alert('No data to import'); return; }
     listEl.innerHTML=''; parsed.forEach(d=>listEl.appendChild(createRow(d))); persist(); updateSummary();
   };
   reader.readAsText(f,'utf-8'); e.target.value='';
 });
 
-/* 초기 */
+/* 초기 렌더 */
 renderAll();
-/* autosave */
+/* autosave every 5s */
 setInterval(()=>{ persist(); }, 5000);
 </script>
 </body>

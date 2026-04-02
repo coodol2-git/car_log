@@ -52,7 +52,7 @@
 
   .controls{
     display:grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap:6px;
     padding:8px 10px;
     align-items:center;
@@ -64,7 +64,7 @@
     border-radius:8px;
     border:0;
     font-weight:700;
-    font-size:12px;
+    font-size:11px;
     cursor:pointer;
     white-space:nowrap;
   }
@@ -238,8 +238,9 @@
   <header><h1>🚗 Car Log (Cloud)</h1></header>
 
   <div class="controls">
-    <button id="addBtn" class="btn primary">+ Add Record</button>
-    <button id="exportBtn" class="btn ghost">Export</button>
+    <button id="addBtn" class="btn primary">+ Add</button>
+    <button id="csvBtn" class="btn ghost">CSV</button>
+    <button id="excelBtn" class="btn ghost">Excel</button>
     <button id="importBtn" class="btn ghost">Import</button>
     <button id="refreshBtn" class="btn ghost">Refresh</button>
   </div>
@@ -261,7 +262,7 @@
 
   <div class="note-bottom">💡 Long press to delete / Auto-save on blur / Auto-sync across devices</div>
 
-  <input id="fileInput" type="file" accept=".json,application/json" />
+  <input id="fileInput" type="file" accept=".csv,.xls,.xlsx,.json,application/json,text/csv" />
 </div>
 
 <script>
@@ -269,7 +270,8 @@ const API_URL = 'https://sheetdb.io/api/v1/jzbxxou5dzg57';
 
 const listEl         = document.getElementById('list');
 const addBtn         = document.getElementById('addBtn');
-const exportBtn      = document.getElementById('exportBtn');
+const csvBtn         = document.getElementById('csvBtn');
+const excelBtn       = document.getElementById('excelBtn');
 const importBtn      = document.getElementById('importBtn');
 const refreshBtn     = document.getElementById('refreshBtn');
 const fileInput      = document.getElementById('fileInput');
@@ -306,7 +308,8 @@ function clearStatus(){
 function setBusyState(value){
   isBusy = value;
   addBtn.disabled = value;
-  exportBtn.disabled = value;
+  csvBtn.disabled = value;
+  excelBtn.disabled = value;
   importBtn.disabled = value;
   refreshBtn.disabled = value;
 }
@@ -387,12 +390,10 @@ function lowerTrim(s){
 
 function resolveHeaderName(keys, aliases, fallback = null){
   const normalizedKeys = keys.map(k => ({ original: k, norm: lowerTrim(k) }));
-
   for (const alias of aliases) {
     const found = normalizedKeys.find(k => k.norm === lowerTrim(alias));
     if (found) return found.original;
   }
-
   return fallback;
 }
 
@@ -432,17 +433,12 @@ async function detectSchema(force = false){
     keys = ['date', 'distance', 'fuel', 'note'];
   }
 
-  const dateKey = resolveHeaderName(keys, FIELD_ALIASES.date, 'date');
-  const distanceKey = resolveHeaderName(keys, FIELD_ALIASES.distance, 'distance');
-  const fuelKey = resolveHeaderName(keys, FIELD_ALIASES.fuel, 'fuel');
-  const noteKey = resolveHeaderName(keys, FIELD_ALIASES.note, 'note');
-
   schemaMap = {
     keys,
-    dateKey,
-    distanceKey,
-    fuelKey,
-    noteKey
+    dateKey: resolveHeaderName(keys, FIELD_ALIASES.date, 'date'),
+    distanceKey: resolveHeaderName(keys, FIELD_ALIASES.distance, 'distance'),
+    fuelKey: resolveHeaderName(keys, FIELD_ALIASES.fuel, 'fuel'),
+    noteKey: resolveHeaderName(keys, FIELD_ALIASES.note, 'note')
   };
 
   return schemaMap;
@@ -452,20 +448,16 @@ function apiRowFromCanonical(item){
   if (!schemaMap) throw new Error('Schema not initialized.');
 
   const n = normalizeItem(item);
-
   const row = {};
   row[schemaMap.dateKey] = n.date;
   row[schemaMap.distanceKey] = n.distance;
   row[schemaMap.fuelKey] = n.fuel;
   row[schemaMap.noteKey] = n.note;
-
   return row;
 }
 
 function canonicalFromApiRow(row){
-  if (!schemaMap) {
-    return normalizeItem(row);
-  }
+  if (!schemaMap) return normalizeItem(row);
 
   return normalizeItem({
     date: row?.[schemaMap.dateKey] ?? '',
@@ -528,9 +520,7 @@ async function addLogToCloud(item) {
 }
 
 async function updateLogToCloud(originalDate, updatedData) {
-  if (!originalDate) {
-    throw new Error('Missing original date for update.');
-  }
+  if (!originalDate) throw new Error('Missing original date for update.');
 
   await detectSchema();
   const row = apiRowFromCanonical(updatedData);
@@ -559,9 +549,7 @@ async function updateLogToCloud(originalDate, updatedData) {
 }
 
 async function deleteLogFromCloud(date) {
-  if (!date) {
-    throw new Error('Missing date for deletion.');
-  }
+  if (!date) throw new Error('Missing date for deletion.');
 
   await detectSchema();
 
@@ -622,9 +610,7 @@ function createRow(data = null, isPending = false){
   const row = document.createElement('div');
   row.className = 'row';
 
-  if (isPending) {
-    row.classList.add('pending');
-  }
+  if (isPending) row.classList.add('pending');
 
   const { col: colDate, inp: dateIn } = makeInput('Date', 'date', 'date');
   const { col: colDist, inp: distIn } = makeInput('Distance (km)', 'number', 'distance', '0');
@@ -700,7 +686,7 @@ function createRow(data = null, isPending = false){
       row.remove();
 
       if (!listEl.querySelector('.row')) {
-        listEl.innerHTML = '<div class="empty">No records. Tap Add Record.</div>';
+        listEl.innerHTML = '<div class="empty">No records. Tap Add.</div>';
       }
 
       updateSummary();
@@ -747,7 +733,6 @@ function addLongPress(el, ms, cb){
   el.addEventListener('touchstart', start, { passive: true });
   el.addEventListener('touchend', cancel);
   el.addEventListener('touchcancel', cancel);
-
   el.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return;
     start();
@@ -775,7 +760,7 @@ function renderList(items){
   listEl.innerHTML = '';
 
   if (!items || items.length === 0) {
-    listEl.innerHTML = '<div class="empty">No records. Tap Add Record.</div>';
+    listEl.innerHTML = '<div class="empty">No records. Tap Add.</div>';
   } else {
     sortItems(items).forEach(item => {
       listEl.appendChild(createRow(normalizeItem(item), false));
@@ -813,8 +798,34 @@ async function renderAll(silent = false){
   }
 }
 
-function downloadJson(filename, data){
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+/* ===== Export: CSV / Excel ===== */
+
+function escapeCsvValue(value){
+  const s = String(value ?? '');
+  if (/[",\n]/.test(s)) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+function convertRowsToCsv(rows){
+  const headers = ['Date', 'Distance (km)', 'Fuel Cost', 'Note'];
+  const lines = [headers.join(',')];
+
+  rows.forEach(row => {
+    lines.push([
+      escapeCsvValue(row.date),
+      escapeCsvValue(row.distance),
+      escapeCsvValue(row.fuel),
+      escapeCsvValue(row.note)
+    ].join(','));
+  });
+
+  return "\uFEFF" + lines.join('\n');
+}
+
+function downloadFile(filename, content, mimeType){
+  const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -825,11 +836,78 @@ function downloadJson(filename, data){
   URL.revokeObjectURL(url);
 }
 
+function exportCsv(){
+  const rows = getCurrentRowsData();
+  const csv = convertRowsToCsv(rows);
+  downloadFile(
+    `car-log-${getTodayLocalDate()}.csv`,
+    csv,
+    'text/csv;charset=utf-8;'
+  );
+}
+
+function escapeHtml(value){
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function convertRowsToExcelHtml(rows){
+  const bodyRows = rows.map(row => `
+    <tr>
+      <td>${escapeHtml(row.date)}</td>
+      <td style="mso-number-format:'0';">${escapeHtml(row.distance)}</td>
+      <td style="mso-number-format:'0';">${escapeHtml(row.fuel)}</td>
+      <td>${escapeHtml(row.note)}</td>
+    </tr>
+  `).join('');
+
+  return `
+    <html xmlns:o="urn:schemas-microsoft-com:office:office"
+          xmlns:x="urn:schemas-microsoft-com:office:excel"
+          xmlns="http://www.w3.org/TR/REC-html40">
+    <head>
+      <meta charset="utf-8">
+      <meta name="ProgId" content="Excel.Sheet">
+      <meta name="Generator" content="ChatGPT">
+    </head>
+    <body>
+      <table border="1">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Distance (km)</th>
+            <th>Fuel Cost</th>
+            <th>Note</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${bodyRows}
+        </tbody>
+      </table>
+    </body>
+    </html>
+  `;
+}
+
+function exportExcel(){
+  const rows = getCurrentRowsData();
+  const html = convertRowsToExcelHtml(rows);
+  downloadFile(
+    `car-log-${getTodayLocalDate()}.xls`,
+    html,
+    'application/vnd.ms-excel;charset=utf-8;'
+  );
+}
+
+/* ===== Import ===== */
+
 async function importJsonToCloud(rows){
   const imported = rows.map(normalizeItem).filter(item => item.date);
 
   if (imported.length === 0) {
-    throw new Error('No valid rows found in JSON.');
+    throw new Error('No valid rows found in file.');
   }
 
   const existing = await fetchLogs();
@@ -855,6 +933,56 @@ async function importJsonToCloud(rows){
   return { total: imported.length, added, updated };
 }
 
+function parseCsvLine(line){
+  const result = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    const next = line[i + 1];
+
+    if (ch === '"' && inQuotes && next === '"') {
+      current += '"';
+      i++;
+    } else if (ch === '"') {
+      inQuotes = !inQuotes;
+    } else if (ch === ',' && !inQuotes) {
+      result.push(current);
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+
+  result.push(current);
+  return result;
+}
+
+function parseCsvText(text){
+  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter(Boolean);
+  if (lines.length < 2) throw new Error('CSV file is empty.');
+
+  const headers = parseCsvLine(lines[0]).map(h => h.trim().toLowerCase());
+
+  const idxDate = headers.findIndex(h => h === 'date');
+  const idxDistance = headers.findIndex(h => h.includes('distance'));
+  const idxFuel = headers.findIndex(h => h.includes('fuel'));
+  const idxNote = headers.findIndex(h => h === 'note');
+
+  if (idxDate < 0) throw new Error('CSV must include a Date column.');
+
+  return lines.slice(1).map(line => {
+    const cols = parseCsvLine(line);
+    return normalizeItem({
+      date: cols[idxDate] ?? '',
+      distance: cols[idxDistance] ?? '0',
+      fuel: cols[idxFuel] ?? '0',
+      note: cols[idxNote] ?? ''
+    });
+  }).filter(row => row.date);
+}
+
 function startAutoSync(){
   stopAutoSync();
   syncTimer = setInterval(() => {
@@ -871,13 +999,13 @@ function stopAutoSync(){
   }
 }
 
+/* ===== Events ===== */
+
 addBtn.addEventListener('click', () => {
   clearStatus();
 
   const emptyNotice = listEl.querySelector('.empty');
-  if (emptyNotice) {
-    listEl.innerHTML = '';
-  }
+  if (emptyNotice) listEl.innerHTML = '';
 
   const row = createRow({
     date: getTodayLocalDate(),
@@ -891,15 +1019,23 @@ addBtn.addEventListener('click', () => {
   showStatus('A new row was added at the bottom. Edit fields, then tap outside to save.', 'info');
 });
 
-exportBtn.addEventListener('click', () => {
+csvBtn.addEventListener('click', () => {
   try {
-    const rows = getCurrentRowsData();
-    const filename = `car-log-${getTodayLocalDate()}.json`;
-    downloadJson(filename, rows);
-    showStatus('Export completed.', 'success');
+    exportCsv();
+    showStatus('CSV export completed.', 'success');
   } catch (e) {
     console.error(e);
-    showStatus('Export failed.', 'error');
+    showStatus('CSV export failed.', 'error');
+  }
+});
+
+excelBtn.addEventListener('click', () => {
+  try {
+    exportExcel();
+    showStatus('Excel export completed.', 'success');
+  } catch (e) {
+    console.error(e);
+    showStatus('Excel export failed.', 'error');
   }
 });
 
@@ -914,13 +1050,18 @@ fileInput.addEventListener('change', async (e) => {
 
   try {
     setBusyState(true);
-    showStatus('Importing JSON to cloud...', 'info');
+    showStatus('Importing file to cloud...', 'info');
 
     const text = await file.text();
-    const parsed = JSON.parse(text);
+    let parsed;
 
-    if (!Array.isArray(parsed)) {
-      throw new Error('Invalid file format. JSON array expected.');
+    if (file.name.toLowerCase().endsWith('.csv')) {
+      parsed = parseCsvText(text);
+    } else {
+      parsed = JSON.parse(text);
+      if (!Array.isArray(parsed)) {
+        throw new Error('Invalid file format. JSON array expected.');
+      }
     }
 
     const result = await importJsonToCloud(parsed);

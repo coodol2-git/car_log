@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
@@ -10,7 +10,10 @@
     --muted:#f4f6f7;
     --border:#dfe7ea;
     --touch:40px;
+    --primary:#0078d4;
+    --danger:#d83b01;
   }
+
   html,body{
     height:100%;
     margin:0;
@@ -39,7 +42,12 @@
     border-bottom:3px solid #e6c200;
     flex-shrink:0;
   }
-  header h1{margin:0;font-size:17px;text-align:center;font-weight:700}
+  header h1{
+    margin:0;
+    font-size:17px;
+    text-align:center;
+    font-weight:700;
+  }
 
   .controls{
     display:flex;
@@ -48,6 +56,7 @@
     align-items:center;
     flex-shrink:0;
   }
+
   .btn{
     flex:1;
     padding:9px 4px;
@@ -58,8 +67,23 @@
     cursor:pointer;
     white-space:nowrap;
   }
-  .btn.primary{background:#0078d4;color:white}
+  .btn.primary{background:var(--primary);color:white}
   .btn.ghost{background:white;border:1px solid var(--border);color:#333}
+  .btn:disabled{opacity:0.6;cursor:not-allowed}
+
+  .status{
+    margin:0 10px 8px;
+    padding:8px 10px;
+    border-radius:8px;
+    font-size:12px;
+    display:none;
+    white-space:pre-wrap;
+    line-height:1.4;
+  }
+  .status.show{display:block}
+  .status.info{background:#eef6fd;color:#134a7c;border:1px solid #cfe5f8}
+  .status.error{background:#fff2f0;color:#8a1f11;border:1px solid #ffd2cc}
+  .status.success{background:#effaf2;color:#1f6b35;border:1px solid #caeccf}
 
   .list{
     padding:6px 8px;
@@ -82,7 +106,9 @@
     -webkit-user-select:none;
   }
   .row:nth-child(even){ background:var(--muted); }
-  .row.longpress{ outline:2px dashed #0078d4; }
+  .row.longpress{ outline:2px dashed var(--primary); }
+  .row.saving{ opacity:0.75; }
+  .row.new-local{ border:1px dashed #9bbfe0; }
 
   .col{
     display:flex;
@@ -90,6 +116,7 @@
     gap:4px;
     min-width:0;
   }
+
   .col label{
     font-size:9.5px;
     color:#666;
@@ -111,6 +138,7 @@
     min-height:var(--touch);
     -webkit-appearance:none;
     appearance:none;
+    background:#fff;
   }
 
   .summary{
@@ -121,6 +149,7 @@
     align-items:center;
     flex-shrink:0;
   }
+
   .summary .info{
     flex:1;
     background:#fff;
@@ -129,8 +158,17 @@
     border-radius:6px;
     text-align:center;
   }
-  .summary .info p{margin:0;font-weight:700;font-size:13px}
-  .summary .info div{font-size:11px;color:#666}
+
+  .summary .info p{
+    margin:0;
+    font-weight:700;
+    font-size:13px;
+  }
+
+  .summary .info div{
+    font-size:11px;
+    color:#666;
+  }
 
   .note-bottom{
     font-size:11px;
@@ -139,7 +177,17 @@
     flex-shrink:0;
     text-align:center;
   }
-  button,input,select{touch-action:manipulation}
+
+  .empty{
+    text-align:center;
+    padding:20px;
+    color:#888;
+    font-size:13px;
+  }
+
+  button,input,select{
+    touch-action:manipulation;
+  }
 </style>
 </head>
 <body>
@@ -150,6 +198,8 @@
     <button id="addBtn" class="btn primary">+ 새 기록 추가</button>
     <button id="refreshBtn" class="btn ghost">🔄 새로고침</button>
   </div>
+
+  <div id="statusBox" class="status info" aria-live="polite"></div>
 
   <div class="list" id="list" aria-live="polite"></div>
 
@@ -168,7 +218,8 @@
 </div>
 
 <script>
-/** * [설정] 유저님의 SheetDB API 주소
+/**
+ * [설정]
  * 구글 시트 첫 줄에 date, distance, fuel, note 헤더가 있어야 합니다.
  */
 const API_URL = 'https://sheetdb.io/api/v1/jzbxxou5dzg57';
@@ -178,99 +229,198 @@ const addBtn         = document.getElementById('addBtn');
 const refreshBtn     = document.getElementById('refreshBtn');
 const sumDistanceEl  = document.getElementById('sumDistance');
 const sumFuelEl      = document.getElementById('sumFuel');
+const statusBox      = document.getElementById('statusBox');
+
+function fmt(x){
+  return String(x).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+function showStatus(message, type = 'info'){
+  statusBox.className = `status show ${type}`;
+  statusBox.textContent = message;
+}
+
+function clearStatus(){
+  statusBox.className = 'status info';
+  statusBox.textContent = '';
+}
+
+async function parseErrorResponse(res, fallbackLabel){
+  let detail = '';
+  try {
+    detail = await res.text();
+  } catch (_) {
+    detail = '';
+  }
+  const text = detail ? ` / ${detail}` : '';
+  return new Error(`${fallbackLabel}: ${res.status} ${res.statusText}${text}`);
+}
 
 // 데이터 로딩 (GET)
 async function fetchLogs() {
-  try {
-    const res = await fetch(API_URL);
-    return await res.json();
-  } catch (e) {
-    console.error("로드 실패:", e);
-    return [];
+  const res = await fetch(API_URL, { cache: 'no-store' });
+
+  if (!res.ok) {
+    throw await parseErrorResponse(res, '로드 실패');
   }
+
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
 }
 
 // 데이터 추가 (POST)
 async function addLogToCloud(item) {
-  try {
-    await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data: [item] })
-    });
-  } catch (e) { console.error("추가 실패:", e); }
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data: [item] })
+  });
+
+  if (!res.ok) {
+    throw await parseErrorResponse(res, '추가 실패');
+  }
+
+  return await res.json();
 }
 
-// 데이터 수정 (PATCH) - 날짜를 기준으로 매칭하여 수정
+// 데이터 수정 (PATCH)
 async function updateLogToCloud(originalDate, updatedData) {
-  if (!originalDate) return;
-  try {
-    await fetch(`${API_URL}/date/${originalDate}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data: updatedData })
-    });
-  } catch (e) { console.error("수정 실패:", e); }
+  if (!originalDate) {
+    throw new Error('수정 기준 날짜가 없습니다.');
+  }
+
+  const res = await fetch(`${API_URL}/date/${encodeURIComponent(originalDate)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data: updatedData })
+  });
+
+  if (!res.ok) {
+    throw await parseErrorResponse(res, '수정 실패');
+  }
+
+  return await res.json();
 }
 
 // 데이터 삭제 (DELETE)
 async function deleteLogFromCloud(date) {
-  if (!date) return;
-  try {
-    await fetch(`${API_URL}/date/${date}`, {
-      method: 'DELETE'
-    });
-  } catch (e) { console.error("삭제 실패:", e); }
+  if (!date) {
+    throw new Error('삭제할 날짜가 없습니다.');
+  }
+
+  const res = await fetch(`${API_URL}/date/${encodeURIComponent(date)}`, {
+    method: 'DELETE'
+  });
+
+  if (!res.ok) {
+    throw await parseErrorResponse(res, '삭제 실패');
+  }
+
+  return await res.json();
 }
 
-function fmt(x){ return String(x).replace(/\B(?=(\d{3})+(?!\d))/g,","); }
+function makeInput(labelText, inputType, placeholder = '') {
+  const col = document.createElement('div');
+  col.className = 'col';
 
-function createRow(data){
+  const lbl = document.createElement('label');
+  lbl.textContent = labelText;
+
+  const inp = document.createElement('input');
+  inp.type = inputType;
+  if (placeholder) inp.placeholder = placeholder;
+
+  col.appendChild(lbl);
+  col.appendChild(inp);
+
+  return { col, inp };
+}
+
+function createRow(data = null, isLocalNew = false){
   const row = document.createElement('div');
-  row.className='row';
+  row.className = 'row';
 
-  const makeCol = (labelText, inputType, placeholder) => {
-    const col  = document.createElement('div'); col.className='col';
-    const lbl  = document.createElement('label'); lbl.textContent=labelText;
-    const inp  = document.createElement('input'); inp.type=inputType;
-    if(placeholder) inp.placeholder=placeholder;
-    col.appendChild(lbl); col.appendChild(inp);
-    return { col, inp };
-  };
+  if (isLocalNew) {
+    row.classList.add('new-local');
+  }
 
-  const { col:colDate, inp:dateIn } = makeCol('날짜','date','');
-  const { col:colDist, inp:distIn } = makeCol('거리(km)','number','0');
-  const { col:colFuel, inp:fuelIn } = makeCol('주유(₩)','number','0');
-  const { col:colNote, inp:noteIn } = makeCol('비고','text','메모');
+  const { col: colDate, inp: dateIn } = makeInput('날짜', 'date');
+  const { col: colDist, inp: distIn } = makeInput('거리(km)', 'number', '0');
+  const { col: colFuel, inp: fuelIn } = makeInput('주유(₩)', 'number', '0');
+  const { col: colNote, inp: noteIn } = makeInput('비고', 'text', '메모');
 
-  if(data){
+  if (data) {
     dateIn.value = data.date || '';
     distIn.value = data.distance || '';
     fuelIn.value = data.fuel || '';
     noteIn.value = data.note || '';
   }
 
-  // 입력 완료 시 자동 저장 로직
-  let prevDate = dateIn.value;
-  [dateIn, distIn, fuelIn, noteIn].forEach(el => {
-    el.addEventListener('blur', async () => {
-      const updated = {
-        date: dateIn.value,
-        distance: distIn.value,
-        fuel: fuelIn.value,
-        note: noteIn.value
-      };
-      await updateLogToCloud(prevDate || dateIn.value, updated);
-      prevDate = dateIn.value; // 기준점 갱신
+  let prevDate = data?.date || '';
+  let isNewLocalRow = isLocalNew;
+
+  async function saveRow() {
+    const current = {
+      date: dateIn.value,
+      distance: distIn.value || 0,
+      fuel: fuelIn.value || 0,
+      note: noteIn.value || ''
+    };
+
+    if (!current.date) {
       updateSummary();
-    });
+      return;
+    }
+
+    row.classList.add('saving');
+
+    try {
+      if (isNewLocalRow) {
+        await addLogToCloud(current);
+        isNewLocalRow = false;
+        row.classList.remove('new-local');
+        prevDate = current.date;
+        showStatus('새 기록이 저장되었습니다.', 'success');
+      } else {
+        await updateLogToCloud(prevDate || current.date, current);
+        prevDate = current.date;
+        showStatus('기록이 저장되었습니다.', 'success');
+      }
+    } catch (e) {
+      console.error(e);
+      showStatus(e.message || '저장 중 오류가 발생했습니다.', 'error');
+    } finally {
+      row.classList.remove('saving');
+      updateSummary();
+    }
+  }
+
+  [dateIn, distIn, fuelIn, noteIn].forEach(el => {
+    el.addEventListener('blur', saveRow);
   });
 
-  addLongPress(row, 700, async ()=>{
-    if(confirm(`해당 행을 클라우드에서 삭제할까요?`)){
-      await deleteLogFromCloud(dateIn.value);
-      row.remove(); 
+  addLongPress(row, 700, async () => {
+    const dateValue = dateIn.value;
+
+    if (!confirm('해당 행을 클라우드에서 삭제할까요?')) {
+      return;
+    }
+
+    try {
+      if (!isNewLocalRow) {
+        await deleteLogFromCloud(dateValue);
+      }
+      row.remove();
+
+      if (!listEl.querySelector('.row')) {
+        listEl.innerHTML = '<div class="empty">기록이 없습니다. 추가 버튼을 눌러주세요.</div>';
+      }
+
       updateSummary();
+      showStatus('기록이 삭제되었습니다.', 'success');
+    } catch (e) {
+      console.error(e);
+      showStatus(e.message || '삭제 중 오류가 발생했습니다.', 'error');
     }
   });
 
@@ -278,55 +428,118 @@ function createRow(data){
   row.appendChild(colDist);
   row.appendChild(colFuel);
   row.appendChild(colNote);
+
   return row;
 }
 
 function addLongPress(el, ms, cb){
-  let timer=null;
-  const start=()=>{ el.classList.add('longpress'); timer=setTimeout(()=>{ cb(); cleanup(); },ms); };
-  const cancel=()=>{ if(timer){ clearTimeout(timer); timer=null; } el.classList.remove('longpress'); };
-  const cleanup=()=>cancel();
-  el.addEventListener('touchstart',start,{passive:true});
-  el.addEventListener('touchend',cancel);
-  el.addEventListener('mousedown',(e)=>{ if(e.button!==0)return; start(); });
-  el.addEventListener('mouseup',cancel);
-}
+  let timer = null;
 
-async function renderAll(){
-  listEl.innerHTML = '<div style="text-align:center;padding:20px;font-size:13px;">동기화 중...</div>';
-  const items = await fetchLogs();
-  listEl.innerHTML = '';
-  
-  if(!items || items.length === 0) {
-    // 시트가 비어있으면 안내 메시지
-    listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#888;font-size:13px;">기록이 없습니다. 추가 버튼을 눌러주세요.</div>';
-  } else {
-    items.forEach(it => listEl.appendChild(createRow(it)));
-  }
-  updateSummary();
+  const start = () => {
+    el.classList.add('longpress');
+    timer = setTimeout(async () => {
+      try {
+        await cb();
+      } finally {
+        cleanup();
+      }
+    }, ms);
+  };
+
+  const cancel = () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    el.classList.remove('longpress');
+  };
+
+  const cleanup = () => cancel();
+
+  el.addEventListener('touchstart', start, { passive: true });
+  el.addEventListener('touchend', cancel);
+  el.addEventListener('touchcancel', cancel);
+
+  el.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    start();
+  });
+  el.addEventListener('mouseup', cancel);
+  el.addEventListener('mouseleave', cancel);
 }
 
 function updateSummary(){
-  let td=0, tf=0;
-  Array.from(listEl.querySelectorAll('.row')).forEach(r=>{
-    const n=r.querySelectorAll('input[type="number"]');
-    td+=Number(n[0]?.value)||0;
-    tf+=Number(n[1]?.value)||0;
+  let td = 0;
+  let tf = 0;
+
+  Array.from(listEl.querySelectorAll('.row')).forEach(r => {
+    const nums = r.querySelectorAll('input[type="number"]');
+    td += Number(nums[0]?.value) || 0;
+    tf += Number(nums[1]?.value) || 0;
   });
-  sumDistanceEl.textContent=fmt(td);
-  sumFuelEl.textContent=fmt(tf);
+
+  sumDistanceEl.textContent = fmt(td);
+  sumFuelEl.textContent = fmt(tf);
+}
+
+async function renderAll(){
+  listEl.innerHTML = '<div class="empty">동기화 중...</div>';
+
+  try {
+    clearStatus();
+    const items = await fetchLogs();
+    listEl.innerHTML = '';
+
+    if (!items || items.length === 0) {
+      listEl.innerHTML = '<div class="empty">기록이 없습니다. 추가 버튼을 눌러주세요.</div>';
+    } else {
+      items.forEach(item => {
+        listEl.appendChild(createRow(item, false));
+      });
+    }
+
+    updateSummary();
+  } catch (e) {
+    console.error(e);
+    listEl.innerHTML = '<div class="empty">데이터를 불러오지 못했습니다.</div>';
+    updateSummary();
+    showStatus(e.message || '로드 중 오류가 발생했습니다.', 'error');
+  }
 }
 
 // 새 기록 추가 버튼
 addBtn.addEventListener('click', async () => {
-  const today = new Date().toISOString().split('T')[0];
-  const newRow = { date: today, distance: 0, fuel: 0, note: '새 기록' };
-  await addLogToCloud(newRow);
-  renderAll(); // 추가 후 다시 로드
+  try {
+    clearStatus();
+
+    const emptyNotice = listEl.querySelector('.empty');
+    if (emptyNotice) {
+      listEl.innerHTML = '';
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    const newRowData = {
+      date: today,
+      distance: 0,
+      fuel: 0,
+      note: '새 기록'
+    };
+
+    // 즉시 화면에 행을 추가하고, blur 시 저장되도록 처리
+    const row = createRow(newRowData, true);
+    listEl.prepend(row);
+    updateSummary();
+    showStatus('새 행이 추가되었습니다. 값을 수정한 뒤 다른 칸을 누르면 저장됩니다.', 'info');
+  } catch (e) {
+    console.error(e);
+    showStatus(e.message || '새 행 추가 중 오류가 발생했습니다.', 'error');
+  }
 });
 
 // 새로고침 버튼
-refreshBtn.addEventListener('click', renderAll);
+refreshBtn.addEventListener('click', async () => {
+  await renderAll();
+});
 
 // 초기 실행
 renderAll();

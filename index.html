@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ko">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
@@ -12,6 +12,7 @@
     --touch:40px;
     --primary:#0078d4;
     --danger:#d83b01;
+    --success:#107c10;
   }
 
   html,body{
@@ -28,7 +29,6 @@
     margin:0 auto;
     background:#fff;
     border:1px solid var(--border);
-    border-radius:0;
     overflow:hidden;
     box-shadow:0 2px 6px rgba(0,0,0,0.04);
     min-height:100dvh;
@@ -42,6 +42,7 @@
     border-bottom:3px solid #e6c200;
     flex-shrink:0;
   }
+
   header h1{
     margin:0;
     font-size:17px;
@@ -50,7 +51,8 @@
   }
 
   .controls{
-    display:flex;
+    display:grid;
+    grid-template-columns: repeat(4, 1fr);
     gap:6px;
     padding:8px 10px;
     align-items:center;
@@ -58,18 +60,30 @@
   }
 
   .btn{
-    flex:1;
-    padding:9px 4px;
-    border-radius:7px;
+    padding:10px 4px;
+    border-radius:8px;
     border:0;
     font-weight:700;
-    font-size:13px;
+    font-size:12px;
     cursor:pointer;
     white-space:nowrap;
   }
-  .btn.primary{background:var(--primary);color:white}
-  .btn.ghost{background:white;border:1px solid var(--border);color:#333}
-  .btn:disabled{opacity:0.6;cursor:not-allowed}
+
+  .btn.primary{
+    background:var(--primary);
+    color:#fff;
+  }
+
+  .btn.ghost{
+    background:#fff;
+    border:1px solid var(--border);
+    color:#333;
+  }
+
+  .btn:disabled{
+    opacity:.65;
+    cursor:not-allowed;
+  }
 
   .status{
     margin:0 10px 8px;
@@ -77,13 +91,26 @@
     border-radius:8px;
     font-size:12px;
     display:none;
+    line-height:1.45;
     white-space:pre-wrap;
-    line-height:1.4;
   }
-  .status.show{display:block}
-  .status.info{background:#eef6fd;color:#134a7c;border:1px solid #cfe5f8}
-  .status.error{background:#fff2f0;color:#8a1f11;border:1px solid #ffd2cc}
-  .status.success{background:#effaf2;color:#1f6b35;border:1px solid #caeccf}
+
+  .status.show{ display:block; }
+  .status.info{
+    background:#eef6fd;
+    color:#134a7c;
+    border:1px solid #cfe5f8;
+  }
+  .status.error{
+    background:#fff2f0;
+    color:#8a1f11;
+    border:1px solid #ffd2cc;
+  }
+  .status.success{
+    background:#effaf2;
+    color:#1f6b35;
+    border:1px solid #caeccf;
+  }
 
   .list{
     padding:6px 8px;
@@ -105,10 +132,22 @@
     user-select:none;
     -webkit-user-select:none;
   }
-  .row:nth-child(even){ background:var(--muted); }
-  .row.longpress{ outline:2px dashed var(--primary); }
-  .row.saving{ opacity:0.75; }
-  .row.new-local{ border:1px dashed #9bbfe0; }
+
+  .row:nth-child(even){
+    background:var(--muted);
+  }
+
+  .row.longpress{
+    outline:2px dashed var(--primary);
+  }
+
+  .row.saving{
+    opacity:.75;
+  }
+
+  .row.new-local{
+    border:1px dashed #9bbfe0;
+  }
 
   .col{
     display:flex;
@@ -185,6 +224,10 @@
     font-size:13px;
   }
 
+  #fileInput{
+    display:none;
+  }
+
   button,input,select{
     touch-action:manipulation;
   }
@@ -195,8 +238,10 @@
   <header><h1>🚗 Car Log (Cloud)</h1></header>
 
   <div class="controls">
-    <button id="addBtn" class="btn primary">+ 새 기록 추가</button>
-    <button id="refreshBtn" class="btn ghost">🔄 새로고침</button>
+    <button id="addBtn" class="btn primary">+ Add Record</button>
+    <button id="exportBtn" class="btn ghost">Export</button>
+    <button id="importBtn" class="btn ghost">Import</button>
+    <button id="refreshBtn" class="btn ghost">Refresh</button>
   </div>
 
   <div id="statusBox" class="status info" aria-live="polite"></div>
@@ -205,28 +250,33 @@
 
   <div class="summary">
     <div class="info">
-      <div>총 운행거리</div>
+      <div>Total Distance</div>
       <p id="sumDistance">0</p>
     </div>
     <div class="info">
-      <div>총 주유비</div>
+      <div>Total Fuel Cost</div>
       <p id="sumFuel">0</p>
     </div>
   </div>
 
-  <div class="note-bottom">💡 길게 누르면 삭제 / 입력 후 포커스 이동 시 자동 저장</div>
+  <div class="note-bottom">💡 Long press to delete / Auto-save on blur</div>
+
+  <input id="fileInput" type="file" accept=".json,application/json" />
 </div>
 
 <script>
 /**
- * [설정]
- * 구글 시트 첫 줄에 date, distance, fuel, note 헤더가 있어야 합니다.
+ * Required sheet headers:
+ * date, distance, fuel, note
  */
 const API_URL = 'https://sheetdb.io/api/v1/jzbxxou5dzg57';
 
 const listEl         = document.getElementById('list');
 const addBtn         = document.getElementById('addBtn');
+const exportBtn      = document.getElementById('exportBtn');
+const importBtn      = document.getElementById('importBtn');
 const refreshBtn     = document.getElementById('refreshBtn');
+const fileInput      = document.getElementById('fileInput');
 const sumDistanceEl  = document.getElementById('sumDistance');
 const sumFuelEl      = document.getElementById('sumFuel');
 const statusBox      = document.getElementById('statusBox');
@@ -245,48 +295,87 @@ function clearStatus(){
   statusBox.textContent = '';
 }
 
-async function parseErrorResponse(res, fallbackLabel){
+async function getErrorText(res, label){
   let detail = '';
   try {
     detail = await res.text();
-  } catch (_) {
-    detail = '';
-  }
-  const text = detail ? ` / ${detail}` : '';
-  return new Error(`${fallbackLabel}: ${res.status} ${res.statusText}${text}`);
+  } catch (_) {}
+  throw new Error(`${label}: ${res.status}${detail ? ' / ' + detail : ''}`);
 }
 
-// 데이터 로딩 (GET)
+function normalizeItem(item){
+  return {
+    date: item?.date ?? '',
+    distance: Number(item?.distance ?? 0),
+    fuel: Number(item?.fuel ?? 0),
+    note: item?.note ?? ''
+  };
+}
+
+function getCurrentRowsData(){
+  return Array.from(listEl.querySelectorAll('.row')).map(row => {
+    const dateIn = row.querySelector('[data-field="date"]');
+    const distIn = row.querySelector('[data-field="distance"]');
+    const fuelIn = row.querySelector('[data-field="fuel"]');
+    const noteIn = row.querySelector('[data-field="note"]');
+
+    return normalizeItem({
+      date: dateIn?.value || '',
+      distance: distIn?.value || 0,
+      fuel: fuelIn?.value || 0,
+      note: noteIn?.value || ''
+    });
+  });
+}
+
 async function fetchLogs() {
   const res = await fetch(API_URL, { cache: 'no-store' });
-
   if (!res.ok) {
-    throw await parseErrorResponse(res, '로드 실패');
+    await getErrorText(res, 'Load failed');
   }
 
   const data = await res.json();
   return Array.isArray(data) ? data : [];
 }
 
-// 데이터 추가 (POST)
 async function addLogToCloud(item) {
-  const res = await fetch(API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ data: [item] })
-  });
+  const payloads = [
+    { data: [item] },
+    { data: item }
+  ];
 
-  if (!res.ok) {
-    throw await parseErrorResponse(res, '추가 실패');
+  let lastError = null;
+
+  for (const payload of payloads) {
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        const txt = await res.text();
+        lastError = new Error(`Add failed: ${res.status}${txt ? ' / ' + txt : ''}`);
+        continue;
+      }
+
+      try {
+        return await res.json();
+      } catch (_) {
+        return true;
+      }
+    } catch (e) {
+      lastError = e;
+    }
   }
 
-  return await res.json();
+  throw lastError || new Error('Add failed');
 }
 
-// 데이터 수정 (PATCH)
 async function updateLogToCloud(originalDate, updatedData) {
   if (!originalDate) {
-    throw new Error('수정 기준 날짜가 없습니다.');
+    throw new Error('Missing original date for update.');
   }
 
   const res = await fetch(`${API_URL}/date/${encodeURIComponent(originalDate)}`, {
@@ -296,16 +385,19 @@ async function updateLogToCloud(originalDate, updatedData) {
   });
 
   if (!res.ok) {
-    throw await parseErrorResponse(res, '수정 실패');
+    await getErrorText(res, 'Update failed');
   }
 
-  return await res.json();
+  try {
+    return await res.json();
+  } catch (_) {
+    return true;
+  }
 }
 
-// 데이터 삭제 (DELETE)
 async function deleteLogFromCloud(date) {
   if (!date) {
-    throw new Error('삭제할 날짜가 없습니다.');
+    throw new Error('Missing date for deletion.');
   }
 
   const res = await fetch(`${API_URL}/date/${encodeURIComponent(date)}`, {
@@ -313,13 +405,17 @@ async function deleteLogFromCloud(date) {
   });
 
   if (!res.ok) {
-    throw await parseErrorResponse(res, '삭제 실패');
+    await getErrorText(res, 'Delete failed');
   }
 
-  return await res.json();
+  try {
+    return await res.json();
+  } catch (_) {
+    return true;
+  }
 }
 
-function makeInput(labelText, inputType, placeholder = '') {
+function makeInput(labelText, inputType, fieldName, placeholder = '') {
   const col = document.createElement('div');
   col.className = 'col';
 
@@ -328,6 +424,7 @@ function makeInput(labelText, inputType, placeholder = '') {
 
   const inp = document.createElement('input');
   inp.type = inputType;
+  inp.dataset.field = fieldName;
   if (placeholder) inp.placeholder = placeholder;
 
   col.appendChild(lbl);
@@ -344,28 +441,29 @@ function createRow(data = null, isLocalNew = false){
     row.classList.add('new-local');
   }
 
-  const { col: colDate, inp: dateIn } = makeInput('날짜', 'date');
-  const { col: colDist, inp: distIn } = makeInput('거리(km)', 'number', '0');
-  const { col: colFuel, inp: fuelIn } = makeInput('주유(₩)', 'number', '0');
-  const { col: colNote, inp: noteIn } = makeInput('비고', 'text', '메모');
+  const { col: colDate, inp: dateIn } = makeInput('Date', 'date', 'date');
+  const { col: colDist, inp: distIn } = makeInput('Distance (km)', 'number', 'distance', '0');
+  const { col: colFuel, inp: fuelIn } = makeInput('Fuel Cost', 'number', 'fuel', '0');
+  const { col: colNote, inp: noteIn } = makeInput('Note', 'text', 'note', 'Memo');
 
   if (data) {
-    dateIn.value = data.date || '';
-    distIn.value = data.distance || '';
-    fuelIn.value = data.fuel || '';
-    noteIn.value = data.note || '';
+    const n = normalizeItem(data);
+    dateIn.value = n.date || '';
+    distIn.value = n.distance;
+    fuelIn.value = n.fuel;
+    noteIn.value = n.note;
   }
 
   let prevDate = data?.date || '';
   let isNewLocalRow = isLocalNew;
 
   async function saveRow() {
-    const current = {
+    const current = normalizeItem({
       date: dateIn.value,
       distance: distIn.value || 0,
       fuel: fuelIn.value || 0,
       note: noteIn.value || ''
-    };
+    });
 
     if (!current.date) {
       updateSummary();
@@ -380,15 +478,15 @@ function createRow(data = null, isLocalNew = false){
         isNewLocalRow = false;
         row.classList.remove('new-local');
         prevDate = current.date;
-        showStatus('새 기록이 저장되었습니다.', 'success');
+        showStatus('New record saved.', 'success');
       } else {
         await updateLogToCloud(prevDate || current.date, current);
         prevDate = current.date;
-        showStatus('기록이 저장되었습니다.', 'success');
+        showStatus('Record updated.', 'success');
       }
     } catch (e) {
       console.error(e);
-      showStatus(e.message || '저장 중 오류가 발생했습니다.', 'error');
+      showStatus(e.message || 'Save failed.', 'error');
     } finally {
       row.classList.remove('saving');
       updateSummary();
@@ -400,27 +498,26 @@ function createRow(data = null, isLocalNew = false){
   });
 
   addLongPress(row, 700, async () => {
-    const dateValue = dateIn.value;
-
-    if (!confirm('해당 행을 클라우드에서 삭제할까요?')) {
+    if (!confirm('Delete this row?')) {
       return;
     }
 
     try {
-      if (!isNewLocalRow) {
-        await deleteLogFromCloud(dateValue);
+      if (!isNewLocalRow && dateIn.value) {
+        await deleteLogFromCloud(dateIn.value);
       }
+
       row.remove();
 
       if (!listEl.querySelector('.row')) {
-        listEl.innerHTML = '<div class="empty">기록이 없습니다. 추가 버튼을 눌러주세요.</div>';
+        listEl.innerHTML = '<div class="empty">No records. Tap Add Record.</div>';
       }
 
       updateSummary();
-      showStatus('기록이 삭제되었습니다.', 'success');
+      showStatus('Record deleted.', 'success');
     } catch (e) {
       console.error(e);
-      showStatus(e.message || '삭제 중 오류가 발생했습니다.', 'error');
+      showStatus(e.message || 'Delete failed.', 'error');
     }
   });
 
@@ -473,75 +570,120 @@ function updateSummary(){
   let tf = 0;
 
   Array.from(listEl.querySelectorAll('.row')).forEach(r => {
-    const nums = r.querySelectorAll('input[type="number"]');
-    td += Number(nums[0]?.value) || 0;
-    tf += Number(nums[1]?.value) || 0;
+    const dist = r.querySelector('[data-field="distance"]');
+    const fuel = r.querySelector('[data-field="fuel"]');
+    td += Number(dist?.value) || 0;
+    tf += Number(fuel?.value) || 0;
   });
 
   sumDistanceEl.textContent = fmt(td);
   sumFuelEl.textContent = fmt(tf);
 }
 
+function renderList(items){
+  listEl.innerHTML = '';
+
+  if (!items || items.length === 0) {
+    listEl.innerHTML = '<div class="empty">No records. Tap Add Record.</div>';
+  } else {
+    items.forEach(item => {
+      listEl.appendChild(createRow(normalizeItem(item), false));
+    });
+  }
+
+  updateSummary();
+}
+
 async function renderAll(){
-  listEl.innerHTML = '<div class="empty">동기화 중...</div>';
+  listEl.innerHTML = '<div class="empty">Syncing...</div>';
 
   try {
     clearStatus();
     const items = await fetchLogs();
-    listEl.innerHTML = '';
-
-    if (!items || items.length === 0) {
-      listEl.innerHTML = '<div class="empty">기록이 없습니다. 추가 버튼을 눌러주세요.</div>';
-    } else {
-      items.forEach(item => {
-        listEl.appendChild(createRow(item, false));
-      });
-    }
-
-    updateSummary();
+    renderList(items);
   } catch (e) {
     console.error(e);
-    listEl.innerHTML = '<div class="empty">데이터를 불러오지 못했습니다.</div>';
+    listEl.innerHTML = '<div class="empty">Failed to load data.</div>';
     updateSummary();
-    showStatus(e.message || '로드 중 오류가 발생했습니다.', 'error');
+    showStatus(e.message || 'Load failed.', 'error');
   }
 }
 
-// 새 기록 추가 버튼
-addBtn.addEventListener('click', async () => {
+function downloadJson(filename, data){
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+addBtn.addEventListener('click', () => {
+  clearStatus();
+
+  const emptyNotice = listEl.querySelector('.empty');
+  if (emptyNotice) {
+    listEl.innerHTML = '';
+  }
+
+  const today = new Date().toISOString().split('T')[0];
+  const row = createRow({
+    date: today,
+    distance: 0,
+    fuel: 0,
+    note: 'New record'
+  }, true);
+
+  listEl.prepend(row);
+  updateSummary();
+  showStatus('A new row was added. Edit fields, then tap outside to save.', 'info');
+});
+
+exportBtn.addEventListener('click', () => {
   try {
-    clearStatus();
-
-    const emptyNotice = listEl.querySelector('.empty');
-    if (emptyNotice) {
-      listEl.innerHTML = '';
-    }
-
-    const today = new Date().toISOString().split('T')[0];
-    const newRowData = {
-      date: today,
-      distance: 0,
-      fuel: 0,
-      note: '새 기록'
-    };
-
-    // 즉시 화면에 행을 추가하고, blur 시 저장되도록 처리
-    const row = createRow(newRowData, true);
-    listEl.prepend(row);
-    updateSummary();
-    showStatus('새 행이 추가되었습니다. 값을 수정한 뒤 다른 칸을 누르면 저장됩니다.', 'info');
+    const rows = getCurrentRowsData();
+    const filename = `car-log-${new Date().toISOString().slice(0,10)}.json`;
+    downloadJson(filename, rows);
+    showStatus('Export completed.', 'success');
   } catch (e) {
     console.error(e);
-    showStatus(e.message || '새 행 추가 중 오류가 발생했습니다.', 'error');
+    showStatus('Export failed.', 'error');
   }
 });
 
-// 새로고침 버튼
+importBtn.addEventListener('click', () => {
+  fileInput.value = '';
+  fileInput.click();
+});
+
+fileInput.addEventListener('change', async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  try {
+    const text = await file.text();
+    const parsed = JSON.parse(text);
+
+    if (!Array.isArray(parsed)) {
+      throw new Error('Invalid file format. JSON array expected.');
+    }
+
+    const normalized = parsed.map(normalizeItem);
+    renderList(normalized);
+    showStatus('Import completed. Imported rows are currently local. Tap outside each row to save to cloud.', 'success');
+  } catch (err) {
+    console.error(err);
+    showStatus(err.message || 'Import failed.', 'error');
+  }
+});
+
 refreshBtn.addEventListener('click', async () => {
   await renderAll();
 });
 
-// 초기 실행
 renderAll();
 </script>
 </body>

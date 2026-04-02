@@ -145,7 +145,7 @@
     opacity:.75;
   }
 
-  .row.new-local{
+  .row.pending{
     border:1px dashed #9bbfe0;
   }
 
@@ -259,16 +259,12 @@
     </div>
   </div>
 
-  <div class="note-bottom">💡 Long press to delete / Auto-save on blur</div>
+  <div class="note-bottom">💡 Long press to delete / Auto-save on blur / Auto-sync across devices</div>
 
   <input id="fileInput" type="file" accept=".json,application/json" />
 </div>
 
 <script>
-/**
- * Required sheet headers:
- * date, distance, fuel, note
- */
 const API_URL = 'https://sheetdb.io/api/v1/jzbxxou5dzg57';
 
 const listEl         = document.getElementById('list');
@@ -280,6 +276,18 @@ const fileInput      = document.getElementById('fileInput');
 const sumDistanceEl  = document.getElementById('sumDistance');
 const sumFuelEl      = document.getElementById('sumFuel');
 const statusBox      = document.getElementById('statusBox');
+
+let isBusy = false;
+let syncTimer = null;
+let lastSyncHash = '';
+let schemaMap = null;
+
+const FIELD_ALIASES = {
+  date: ['date', 'Date', 'DATE', 'day', 'Day', 'record_date', 'Record Date'],
+  distance: ['distance', 'Distance', 'DISTANCE', 'km', 'KM', 'distance_km', 'Distance (km)', 'Distance(km)'],
+  fuel: ['fuel', 'Fuel', 'FUEL', 'fuel_cost', 'Fuel Cost', 'cost', 'Cost'],
+  note: ['note', 'Note', 'NOTE', 'memo', 'Memo', 'remark', 'Remark', 'remarks']
+};
 
 function fmt(x){
   return String(x).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
@@ -295,82 +303,228 @@ function clearStatus(){
   statusBox.textContent = '';
 }
 
-async function getErrorText(res, label){
-  let detail = '';
+function setBusyState(value){
+  isBusy = value;
+  addBtn.disabled = value;
+  exportBtn.disabled = value;
+  importBtn.disabled = value;
+  refreshBtn.disabled = value;
+}
+
+function hasFocusedInput(){
+  const el = document.activeElement;
+  return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA');
+}
+
+function stableHash(items){
+  return JSON.stringify(
+    (items || [])
+      .map(normalizeItem)
+      .sort((a, b) => {
+        const ad = String(a.date || '');
+        const bd = String(b.date || '');
+        if (ad !== bd) return ad.localeCompare(bd);
+        const an = String(a.note || '');
+        const bn = String(b.note || '');
+        return an.localeCompare(bn);
+      })
+  );
+}
+
+function getTodayLocalDate(){
+  const now = new Date();
+  const tzOffset = now.getTimezoneOffset() * 60000;
+  return new Date(now.getTime() - tzOffset).toISOString().slice(0, 10);
+}
+
+function requestUrl(path = '', params = {}){
+  const url = new URL(API_URL + path);
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, v);
+  });
+  url.searchParams.set('_ts', Date.now());
+  return url.toString();
+}
+
+async function readTextSafe(res){
   try {
-    detail = await res.text();
-  } catch (_) {}
+    return await res.text();
+  } catch (_) {
+    return '';
+  }
+}
+
+async function throwHttpError(res, label){
+  const detail = await readTextSafe(res);
   throw new Error(`${label}: ${res.status}${detail ? ' / ' + detail : ''}`);
 }
 
 function normalizeItem(item){
   return {
-    date: item?.date ?? '',
-    distance: Number(item?.distance ?? 0),
-    fuel: Number(item?.fuel ?? 0),
-    note: item?.note ?? ''
+    date: String(item?.date ?? '').trim(),
+    distance: String(item?.distance ?? '0').trim(),
+    fuel: String(item?.fuel ?? '0').trim(),
+    note: String(item?.note ?? '').trim()
   };
 }
 
-function getCurrentRowsData(){
-  return Array.from(listEl.querySelectorAll('.row')).map(row => {
-    const dateIn = row.querySelector('[data-field="date"]');
-    const distIn = row.querySelector('[data-field="distance"]');
-    const fuelIn = row.querySelector('[data-field="fuel"]');
-    const noteIn = row.querySelector('[data-field="note"]');
+function parseNumber(v){
+  return Number(String(v ?? '').replace(/,/g, '').trim()) || 0;
+}
 
-    return normalizeItem({
-      date: dateIn?.value || '',
-      distance: distIn?.value || 0,
-      fuel: fuelIn?.value || 0,
-      note: noteIn?.value || ''
-    });
+function sortItems(items){
+  return [...items].sort((a, b) => {
+    const ad = String(a.date || '');
+    const bd = String(b.date || '');
+    if (ad !== bd) return ad.localeCompare(bd);
+    return 0;
   });
 }
 
-async function fetchLogs() {
-  const res = await fetch(API_URL, { cache: 'no-store' });
+function lowerTrim(s){
+  return String(s || '').trim().toLowerCase();
+}
+
+function resolveHeaderName(keys, aliases, fallback = null){
+  const normalizedKeys = keys.map(k => ({ original: k, norm: lowerTrim(k) }));
+
+  for (const alias of aliases) {
+    const found = normalizedKeys.find(k => k.norm === lowerTrim(alias));
+    if (found) return found.original;
+  }
+
+  return fallback;
+}
+
+async function fetchSheetKeys(){
+  const res = await fetch(requestUrl('/keys'), {
+    method: 'GET',
+    headers: { 'Accept': 'application/json' },
+    cache: 'no-store'
+  });
+
   if (!res.ok) {
-    await getErrorText(res, 'Load failed');
+    await throwHttpError(res, 'Keys load failed');
   }
 
   const data = await res.json();
   return Array.isArray(data) ? data : [];
 }
 
-async function addLogToCloud(item) {
-  const payloads = [
-    { data: [item] },
-    { data: item }
-  ];
+async function detectSchema(force = false){
+  if (schemaMap && !force) return schemaMap;
 
-  let lastError = null;
+  let keys = [];
+  try {
+    keys = await fetchSheetKeys();
+  } catch (e) {
+    console.warn('keys endpoint failed:', e);
+  }
 
-  for (const payload of payloads) {
-    try {
-      const res = await fetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      if (!res.ok) {
-        const txt = await res.text();
-        lastError = new Error(`Add failed: ${res.status}${txt ? ' / ' + txt : ''}`);
-        continue;
-      }
-
-      try {
-        return await res.json();
-      } catch (_) {
-        return true;
-      }
-    } catch (e) {
-      lastError = e;
+  if (!keys.length) {
+    const rows = await fetchRawLogs();
+    if (rows.length) {
+      keys = Object.keys(rows[0]);
     }
   }
 
-  throw lastError || new Error('Add failed');
+  if (!keys.length) {
+    keys = ['date', 'distance', 'fuel', 'note'];
+  }
+
+  const dateKey = resolveHeaderName(keys, FIELD_ALIASES.date, 'date');
+  const distanceKey = resolveHeaderName(keys, FIELD_ALIASES.distance, 'distance');
+  const fuelKey = resolveHeaderName(keys, FIELD_ALIASES.fuel, 'fuel');
+  const noteKey = resolveHeaderName(keys, FIELD_ALIASES.note, 'note');
+
+  schemaMap = {
+    keys,
+    dateKey,
+    distanceKey,
+    fuelKey,
+    noteKey
+  };
+
+  return schemaMap;
+}
+
+function apiRowFromCanonical(item){
+  if (!schemaMap) throw new Error('Schema not initialized.');
+
+  const n = normalizeItem(item);
+
+  const row = {};
+  row[schemaMap.dateKey] = n.date;
+  row[schemaMap.distanceKey] = n.distance;
+  row[schemaMap.fuelKey] = n.fuel;
+  row[schemaMap.noteKey] = n.note;
+
+  return row;
+}
+
+function canonicalFromApiRow(row){
+  if (!schemaMap) {
+    return normalizeItem(row);
+  }
+
+  return normalizeItem({
+    date: row?.[schemaMap.dateKey] ?? '',
+    distance: row?.[schemaMap.distanceKey] ?? 0,
+    fuel: row?.[schemaMap.fuelKey] ?? 0,
+    note: row?.[schemaMap.noteKey] ?? ''
+  });
+}
+
+async function fetchRawLogs() {
+  const url = requestUrl('', {
+    sort_by: 'date',
+    sort_order: 'asc',
+    sort_method: 'date',
+    sort_date_format: 'Y-m-d'
+  });
+
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: { 'Accept': 'application/json' },
+    cache: 'no-store'
+  });
+
+  if (!res.ok) {
+    await throwHttpError(res, 'Load failed');
+  }
+
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
+}
+
+async function fetchLogs() {
+  await detectSchema();
+  const rows = await fetchRawLogs();
+  return sortItems(rows.map(canonicalFromApiRow));
+}
+
+async function addLogToCloud(item) {
+  await detectSchema();
+  const row = apiRowFromCanonical(item);
+
+  const res = await fetch(requestUrl(''), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    },
+    body: JSON.stringify({ data: [row] })
+  });
+
+  if (!res.ok) {
+    await throwHttpError(res, 'Add failed');
+  }
+
+  try {
+    return await res.json();
+  } catch (_) {
+    return true;
+  }
 }
 
 async function updateLogToCloud(originalDate, updatedData) {
@@ -378,14 +532,23 @@ async function updateLogToCloud(originalDate, updatedData) {
     throw new Error('Missing original date for update.');
   }
 
-  const res = await fetch(`${API_URL}/date/${encodeURIComponent(originalDate)}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ data: updatedData })
-  });
+  await detectSchema();
+  const row = apiRowFromCanonical(updatedData);
+
+  const res = await fetch(
+    requestUrl(`/${encodeURIComponent(schemaMap.dateKey)}/${encodeURIComponent(originalDate)}`),
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({ data: row })
+    }
+  );
 
   if (!res.ok) {
-    await getErrorText(res, 'Update failed');
+    await throwHttpError(res, 'Update failed');
   }
 
   try {
@@ -400,12 +563,18 @@ async function deleteLogFromCloud(date) {
     throw new Error('Missing date for deletion.');
   }
 
-  const res = await fetch(`${API_URL}/date/${encodeURIComponent(date)}`, {
-    method: 'DELETE'
-  });
+  await detectSchema();
+
+  const res = await fetch(
+    requestUrl(`/${encodeURIComponent(schemaMap.dateKey)}/${encodeURIComponent(date)}`),
+    {
+      method: 'DELETE',
+      headers: { 'Accept': 'application/json' }
+    }
+  );
 
   if (!res.ok) {
-    await getErrorText(res, 'Delete failed');
+    await throwHttpError(res, 'Delete failed');
   }
 
   try {
@@ -433,12 +602,28 @@ function makeInput(labelText, inputType, fieldName, placeholder = '') {
   return { col, inp };
 }
 
-function createRow(data = null, isLocalNew = false){
+function getCurrentRowsData(){
+  return Array.from(listEl.querySelectorAll('.row')).map(row => {
+    const dateIn = row.querySelector('[data-field="date"]');
+    const distIn = row.querySelector('[data-field="distance"]');
+    const fuelIn = row.querySelector('[data-field="fuel"]');
+    const noteIn = row.querySelector('[data-field="note"]');
+
+    return normalizeItem({
+      date: dateIn?.value || '',
+      distance: distIn?.value || 0,
+      fuel: fuelIn?.value || 0,
+      note: noteIn?.value || ''
+    });
+  });
+}
+
+function createRow(data = null, isPending = false){
   const row = document.createElement('div');
   row.className = 'row';
 
-  if (isLocalNew) {
-    row.classList.add('new-local');
+  if (isPending) {
+    row.classList.add('pending');
   }
 
   const { col: colDate, inp: dateIn } = makeInput('Date', 'date', 'date');
@@ -455,9 +640,12 @@ function createRow(data = null, isLocalNew = false){
   }
 
   let prevDate = data?.date || '';
-  let isNewLocalRow = isLocalNew;
+  let pendingCreate = isPending;
+  let saveLock = false;
 
   async function saveRow() {
+    if (saveLock) return;
+
     const current = normalizeItem({
       date: dateIn.value,
       distance: distIn.value || 0,
@@ -470,19 +658,22 @@ function createRow(data = null, isLocalNew = false){
       return;
     }
 
+    saveLock = true;
     row.classList.add('saving');
 
     try {
-      if (isNewLocalRow) {
+      if (pendingCreate) {
         await addLogToCloud(current);
-        isNewLocalRow = false;
-        row.classList.remove('new-local');
+        pendingCreate = false;
+        row.classList.remove('pending');
         prevDate = current.date;
-        showStatus('New record saved.', 'success');
+        await renderAll(true);
+        showStatus('New record saved and synced.', 'success');
       } else {
         await updateLogToCloud(prevDate || current.date, current);
         prevDate = current.date;
-        showStatus('Record updated.', 'success');
+        await renderAll(true);
+        showStatus('Record updated and synced.', 'success');
       }
     } catch (e) {
       console.error(e);
@@ -490,6 +681,7 @@ function createRow(data = null, isLocalNew = false){
     } finally {
       row.classList.remove('saving');
       updateSummary();
+      saveLock = false;
     }
   }
 
@@ -498,12 +690,10 @@ function createRow(data = null, isLocalNew = false){
   });
 
   addLongPress(row, 700, async () => {
-    if (!confirm('Delete this row?')) {
-      return;
-    }
+    if (!confirm('Delete this row?')) return;
 
     try {
-      if (!isNewLocalRow && dateIn.value) {
+      if (!pendingCreate && dateIn.value) {
         await deleteLogFromCloud(dateIn.value);
       }
 
@@ -515,6 +705,7 @@ function createRow(data = null, isLocalNew = false){
 
       updateSummary();
       showStatus('Record deleted.', 'success');
+      await renderAll(true);
     } catch (e) {
       console.error(e);
       showStatus(e.message || 'Delete failed.', 'error');
@@ -572,8 +763,8 @@ function updateSummary(){
   Array.from(listEl.querySelectorAll('.row')).forEach(r => {
     const dist = r.querySelector('[data-field="distance"]');
     const fuel = r.querySelector('[data-field="fuel"]');
-    td += Number(dist?.value) || 0;
-    tf += Number(fuel?.value) || 0;
+    td += parseNumber(dist?.value);
+    tf += parseNumber(fuel?.value);
   });
 
   sumDistanceEl.textContent = fmt(td);
@@ -586,7 +777,7 @@ function renderList(items){
   if (!items || items.length === 0) {
     listEl.innerHTML = '<div class="empty">No records. Tap Add Record.</div>';
   } else {
-    items.forEach(item => {
+    sortItems(items).forEach(item => {
       listEl.appendChild(createRow(normalizeItem(item), false));
     });
   }
@@ -594,18 +785,31 @@ function renderList(items){
   updateSummary();
 }
 
-async function renderAll(){
-  listEl.innerHTML = '<div class="empty">Syncing...</div>';
+async function renderAll(silent = false){
+  if (isBusy) return;
+  if (hasFocusedInput()) return;
 
   try {
-    clearStatus();
+    if (!silent) {
+      listEl.innerHTML = '<div class="empty">Syncing...</div>';
+      clearStatus();
+    }
+
+    await detectSchema();
     const items = await fetchLogs();
-    renderList(items);
+    const hash = stableHash(items);
+
+    if (hash !== lastSyncHash || !listEl.querySelector('.row')) {
+      renderList(items);
+      lastSyncHash = hash;
+    }
   } catch (e) {
     console.error(e);
-    listEl.innerHTML = '<div class="empty">Failed to load data.</div>';
-    updateSummary();
-    showStatus(e.message || 'Load failed.', 'error');
+    if (!silent) {
+      listEl.innerHTML = '<div class="empty">Failed to load data.</div>';
+      updateSummary();
+      showStatus(e.message || 'Load failed.', 'error');
+    }
   }
 }
 
@@ -621,6 +825,52 @@ function downloadJson(filename, data){
   URL.revokeObjectURL(url);
 }
 
+async function importJsonToCloud(rows){
+  const imported = rows.map(normalizeItem).filter(item => item.date);
+
+  if (imported.length === 0) {
+    throw new Error('No valid rows found in JSON.');
+  }
+
+  const existing = await fetchLogs();
+  const existingMap = new Map();
+
+  existing.forEach(item => {
+    if (item.date) existingMap.set(item.date, item);
+  });
+
+  let added = 0;
+  let updated = 0;
+
+  for (const item of imported) {
+    if (existingMap.has(item.date)) {
+      await updateLogToCloud(item.date, item);
+      updated++;
+    } else {
+      await addLogToCloud(item);
+      added++;
+    }
+  }
+
+  return { total: imported.length, added, updated };
+}
+
+function startAutoSync(){
+  stopAutoSync();
+  syncTimer = setInterval(() => {
+    if (document.visibilityState === 'visible') {
+      renderAll(true);
+    }
+  }, 15000);
+}
+
+function stopAutoSync(){
+  if (syncTimer) {
+    clearInterval(syncTimer);
+    syncTimer = null;
+  }
+}
+
 addBtn.addEventListener('click', () => {
   clearStatus();
 
@@ -629,23 +879,22 @@ addBtn.addEventListener('click', () => {
     listEl.innerHTML = '';
   }
 
-  const today = new Date().toISOString().split('T')[0];
   const row = createRow({
-    date: today,
+    date: getTodayLocalDate(),
     distance: 0,
     fuel: 0,
     note: 'New record'
   }, true);
 
-  listEl.prepend(row);
+  listEl.appendChild(row);
   updateSummary();
-  showStatus('A new row was added. Edit fields, then tap outside to save.', 'info');
+  showStatus('A new row was added at the bottom. Edit fields, then tap outside to save.', 'info');
 });
 
 exportBtn.addEventListener('click', () => {
   try {
     const rows = getCurrentRowsData();
-    const filename = `car-log-${new Date().toISOString().slice(0,10)}.json`;
+    const filename = `car-log-${getTodayLocalDate()}.json`;
     downloadJson(filename, rows);
     showStatus('Export completed.', 'success');
   } catch (e) {
@@ -664,6 +913,9 @@ fileInput.addEventListener('change', async (e) => {
   if (!file) return;
 
   try {
+    setBusyState(true);
+    showStatus('Importing JSON to cloud...', 'info');
+
     const text = await file.text();
     const parsed = JSON.parse(text);
 
@@ -671,20 +923,35 @@ fileInput.addEventListener('change', async (e) => {
       throw new Error('Invalid file format. JSON array expected.');
     }
 
-    const normalized = parsed.map(normalizeItem);
-    renderList(normalized);
-    showStatus('Import completed. Imported rows are currently local. Tap outside each row to save to cloud.', 'success');
+    const result = await importJsonToCloud(parsed);
+    await renderAll(true);
+
+    showStatus(
+      `Import completed. Total: ${result.total}, Added: ${result.added}, Updated: ${result.updated}`,
+      'success'
+    );
   } catch (err) {
     console.error(err);
     showStatus(err.message || 'Import failed.', 'error');
+  } finally {
+    setBusyState(false);
   }
 });
 
 refreshBtn.addEventListener('click', async () => {
-  await renderAll();
+  await renderAll(false);
 });
 
-renderAll();
+window.addEventListener('focus', () => renderAll(true));
+window.addEventListener('pageshow', () => renderAll(true));
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    renderAll(true);
+  }
+});
+
+renderAll(false);
+startAutoSync();
 </script>
 </body>
 </html>

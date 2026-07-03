@@ -317,7 +317,7 @@ let isBusy = false;
 let syncTimer = null;
 let lastSyncHash = '';
 let schemaMap = null;
-let allCachedItems = []; // 전체 데이터를 저장할 캐시 배열
+let allCachedItems = []; 
 
 const FIELD_ALIASES = {
   date: ['date', 'Date', 'DATE', 'day', 'Day', 'record_date', 'Record Date', '날짜'],
@@ -361,7 +361,7 @@ function stableHash(items){
       .sort((a, b) => {
         const ad = String(a.date || '');
         const bd = String(b.date || '');
-        if (ad !== bd) return ad.localeCompare(bd);
+        if (ad !== bd) return bd.localeCompare(ad); // 안정성 비교를 위해 정렬 일치시킴
         const an = String(a.note || '');
         const bn = String(b.note || '');
         return an.localeCompare(bn);
@@ -375,7 +375,6 @@ function getTodayLocalDate(){
   return new Date(now.getTime() - tzOffset).toISOString().slice(0, 10);
 }
 
-// 현재 연월 가져오기 (예: "2026-07")
 function getCurrentYearMonth(){
   return getTodayLocalDate().slice(0, 7);
 }
@@ -415,11 +414,12 @@ function parseNumber(v){
   return Number(String(v ?? '').replace(/,/g, '').trim()) || 0;
 }
 
+// 최신일 기준으로 상단에 정렬되도록 내림차순(b - a) 정렬로 전면 변경
 function sortItems(items){
   return [...items].sort((a, b) => {
     const ad = String(a.date || '');
     const bd = String(b.date || '');
-    if (ad !== bd) return ad.localeCompare(bd);
+    if (ad !== bd) return bd.localeCompare(ad); // 최신 날짜가 맨 위로 오도록 내림차순 정렬
     return 0;
   });
 }
@@ -510,7 +510,7 @@ function canonicalFromApiRow(row){
 async function fetchRawLogs() {
   const url = requestUrl('', {
     sort_by: 'date',
-    sort_order: 'asc',
+    sort_order: 'desc', // API 단에서도 내림차순 정렬 요청
     sort_method: 'date',
     sort_date_format: 'Y-m-d'
   });
@@ -796,24 +796,18 @@ function updateSummary(){
   sumFuelEl.textContent = fmt(tf);
 }
 
-// 콤보박스 연월 옵션 업데이트 함수
 function updateMonthFilterOptions(items) {
   const monthsSet = new Set();
   
-  // 현재 연월은 항상 목록에 추가
   monthsSet.add(getCurrentYearMonth());
   
-  // 데이터가 있는 모든 연월 수집 (YYYY-MM 형식 추출)
   items.forEach(item => {
     if (item.date && item.date.length >= 7) {
       monthsSet.add(item.date.slice(0, 7));
     }
   });
   
-  // 내림차순 정렬 (최신 월이 위로 오게)
   const sortedMonths = Array.from(monthsSet).sort((a, b) => b.localeCompare(a));
-  
-  // 현재 선택된 값 보존
   const currentSelected = monthFilterEl.value || getCurrentYearMonth();
   
   monthFilterEl.innerHTML = '';
@@ -825,20 +819,19 @@ function updateMonthFilterOptions(items) {
     monthFilterEl.appendChild(opt);
   });
   
-  // 선택했던 값 다시 설정 (없으면 현재 연월)
   monthFilterEl.value = sortedMonths.includes(currentSelected) ? currentSelected : getCurrentYearMonth();
 }
 
 function renderList(items){
   listEl.innerHTML = '';
 
-  // 선택된 연월 기준 필터링
   const selectedYM = monthFilterEl.value || getCurrentYearMonth();
   const filteredItems = items.filter(item => item.date && item.date.startsWith(selectedYM));
 
   if (!filteredItems || filteredItems.length === 0) {
     listEl.innerHTML = `<div class="empty">${selectedYM.split('-')[0]}년 ${selectedYM.split('-')[1]}월 기록이 없습니다. 추가 버튼을 눌러주세요.</div>`;
   } else {
+    // 렌더링 시 최신일 기준으로 완전히 뒤집어 상단 노출
     sortItems(filteredItems).forEach(item => {
       listEl.appendChild(createRow(normalizeItem(item), false));
     });
@@ -858,9 +851,8 @@ async function renderAll(silent = false){
     }
 
     await detectSchema();
-    allCachedItems = await fetchLogs(); // 전체 리스트 저장
+    allCachedItems = await fetchLogs(); 
     
-    // 연월 옵션 목록 생성 및 최신화
     updateMonthFilterOptions(allCachedItems);
     
     const hash = stableHash(allCachedItems);
@@ -879,7 +871,6 @@ async function renderAll(silent = false){
   }
 }
 
-// 사용자가 연월 선택을 바꿨을 때 리스트 다시 그리기
 monthFilterEl.addEventListener('change', () => {
   renderList(allCachedItems);
 });
@@ -956,7 +947,6 @@ function convertRowsToExcelHtml(rows){
     <head>
       <meta charset="utf-8">
       <meta name="ProgId" content="Excel.Sheet">
-      <meta name="Generator" content="ChatGPT">
     </head>
     <body>
       <table border="1">
@@ -1069,7 +1059,6 @@ function parseCsvText(text){
   }).filter(row => row.date);
 }
 
-// 과도한 API 트래픽 초과를 방지하기 위해 자동 동기화 주기를 60초로 최적화
 function startAutoSync(){
   stopAutoSync();
   syncTimer = setInterval(() => {
@@ -1101,7 +1090,8 @@ addBtn.addEventListener('click', () => {
     note: '새 기록'
   }, true);
 
-  listEl.insertBefore(row, listEl.firstChild); // 사용자가 알아보기 쉽게 맨 위에 행 추가
+  // 최신순 정렬에 부합하도록 추가 버튼 시 화면 맨 위에 행을 삽입
+  listEl.insertBefore(row, listEl.firstChild); 
   updateSummary();
   showStatus('새 행이 추가되었습니다. 값을 입력한 뒤 다른 곳을 누르면 저장됩니다.', 'info');
 });

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
-<title>차량 운행 기록 (클라우드 동기화)</title>
+<title>차량 운행 기록 (월별 동기화)</title>
 <style>
   :root{
     --yellow:#ffd700;
@@ -48,6 +48,25 @@
     font-size:17px;
     text-align:center;
     font-weight:700;
+  }
+
+  /* 월 선택기 스타일 추가 */
+  .month-selector-box {
+    padding: 8px 10px 0;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  .month-select {
+    flex: 1;
+    min-height: 36px;
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 700;
+    background: #fff;
   }
 
   .controls{
@@ -237,6 +256,11 @@
 <div class="wrap" role="application" aria-label="차량 운행 기록">
   <header><h1>🚗 차량 운행 기록 (클라우드)</h1></header>
 
+  <div class="month-selector-box">
+    <select id="monthSelect" class="month-select">
+      </select>
+  </div>
+
   <div class="controls">
     <button id="addBtn" class="btn primary">+ 추가</button>
     <button id="csvBtn" class="btn ghost">CSV</button>
@@ -251,16 +275,16 @@
 
   <div class="summary">
     <div class="info">
-      <div>총 운행거리</div>
+      <div><span id="summaryMonth">이번 달</span> 운행거리</div>
       <p id="sumDistance">0</p>
     </div>
     <div class="info">
-      <div>총 주유비</div>
+      <div><span id="summaryMonthFuel">이번 달</span> 주유비</div>
       <p id="sumFuel">0</p>
     </div>
   </div>
 
-  <div class="note-bottom">💡 길게 누르면 삭제 / 포커스 이동 시 자동 저장 / 기기 간 자동 동기화</div>
+  <div class="note-bottom">💡 길게 누르면 삭제 / 포커스 이동 시 자동 저장 / 선택 월만 표시</div>
 
   <input id="fileInput" type="file" accept=".csv,.xls,.xlsx,.json,application/json,text/csv" />
 </div>
@@ -278,11 +302,15 @@ const fileInput      = document.getElementById('fileInput');
 const sumDistanceEl  = document.getElementById('sumDistance');
 const sumFuelEl      = document.getElementById('sumFuel');
 const statusBox      = document.getElementById('statusBox');
+const monthSelect    = document.getElementById('monthSelect');
+const summaryMonth   = document.getElementById('summaryMonth');
+const summaryMonthFuel = document.getElementById('summaryMonthFuel');
 
 let isBusy = false;
 let syncTimer = null;
 let lastSyncHash = '';
 let schemaMap = null;
+let allCloudItems = []; // 서버에서 받아온 전체 원본 데이터를 보관
 
 const FIELD_ALIASES = {
   date: ['date', 'Date', 'DATE', 'day', 'Day', 'record_date', 'Record Date', '날짜'],
@@ -319,6 +347,7 @@ function hasFocusedInput(){
   return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA');
 }
 
+// 해시 판단 기준도 전체가 아닌 현재 선택된 월의 데이터 기준으로만 비교하도록 수정
 function stableHash(items){
   return JSON.stringify(
     (items || [])
@@ -338,6 +367,65 @@ function getTodayLocalDate(){
   const now = new Date();
   const tzOffset = now.getTimezoneOffset() * 60000;
   return new Date(now.getTime() - tzOffset).toISOString().slice(0, 10);
+}
+
+// 현재 선택된 연월(YYYY-MM) 가져오기
+function getSelectedYearMonth() {
+  if (!monthSelect.value) {
+    return getTodayLocalDate().slice(0, 7);
+  }
+  return monthSelect.value;
+}
+
+// 상단 Select Box에 6개월 전부터 이번 달까지 기본 옵션 채우기 + 데이터에 존재하는 연월 자동 추가
+function initMonthOptions(items = []) {
+  const currentSelections = monthSelect.value;
+  const monthsSet = new Set();
+
+  // 1. 최근 6개월 자동 생성하여 추가
+  const now = new Date();
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const tzOffset = d.getTimezoneOffset() * 60000;
+    const yyyymm = new Date(d.getTime() - tzOffset).toISOString().slice(0, 7);
+    monthsSet.add(yyyymm);
+  }
+
+  // 2. 서버 데이터에 등록된 날짜 중 다른 연월이 있다면 세트에 추가
+  items.forEach(it => {
+    if (it.date && it.date.length >= 7) {
+      monthsSet.add(it.date.slice(0, 7));
+    }
+  });
+
+  // 역순 정렬 (최신 월이 위로 가도록)
+  const sortedMonths = Array.from(monthsSet).sort((a, b) => b.localeCompare(a));
+
+  // Select 박스 비우고 다시 채우기
+  monthSelect.innerHTML = '';
+  sortedMonths.forEach(ym => {
+    const opt = document.createElement('option');
+    opt.value = ym;
+    
+    const [year, month] = ym.split('-');
+    opt.textContent = `${year}년 ${parseInt(month)}월 운행기록`;
+    monthSelect.appendChild(opt);
+  });
+
+  // 기존 선택값 복구 또는 기본값(이번 달) 설정
+  if (currentSelections && sortedMonths.includes(currentSelections)) {
+    monthSelect.value = currentSelections;
+  } else {
+    const thisMonthStr = getTodayLocalDate().slice(0, 7);
+    if (sortedMonths.includes(thisMonthStr)) {
+      monthSelect.value = thisMonthStr;
+    }
+  }
+
+  // 하단 요약 타이틀 연월 업데이트
+  const [selYear, selMonth] = getSelectedYearMonth().split('-');
+  summaryMonth.textContent = `${parseInt(selMonth)}월`;
+  summaryMonthFuel.textContent = `${parseInt(selMonth)}월`;
 }
 
 function requestUrl(path = '', params = {}){
@@ -492,7 +580,8 @@ async function fetchRawLogs() {
 async function fetchLogs() {
   await detectSchema();
   const rows = await fetchRawLogs();
-  return sortItems(rows.map(canonicalFromApiRow));
+  allCloudItems = sortItems(rows.map(canonicalFromApiRow));
+  return allCloudItems;
 }
 
 async function addLogToCloud(item) {
@@ -686,7 +775,7 @@ function createRow(data = null, isPending = false){
       row.remove();
 
       if (!listEl.querySelector('.row')) {
-        listEl.innerHTML = '<div class="empty">기록이 없습니다. 추가 버튼을 눌러주세요.</div>';
+        listEl.innerHTML = '<div class="empty">선택한 월에 기록이 없습니다. 추가 버튼을 눌러주세요.</div>';
       }
 
       updateSummary();
@@ -759,10 +848,14 @@ function updateSummary(){
 function renderList(items){
   listEl.innerHTML = '';
 
-  if (!items || items.length === 0) {
-    listEl.innerHTML = '<div class="empty">기록이 없습니다. 추가 버튼을 눌러주세요.</div>';
+  // 선택된 연월(YYYY-MM)에 해당되는 데이터만 필터링
+  const selectedYM = getSelectedYearMonth();
+  const filteredItems = items.filter(it => it.date && it.date.startsWith(selectedYM));
+
+  if (filteredItems.length === 0) {
+    listEl.innerHTML = '<div class="empty">선택한 월에 기록이 없습니다. 추가 버튼을 눌러주세요.</div>';
   } else {
-    sortItems(items).forEach(item => {
+    sortItems(filteredItems).forEach(item => {
       listEl.appendChild(createRow(normalizeItem(item), false));
     });
   }
@@ -782,7 +875,14 @@ async function renderAll(silent = false){
 
     await detectSchema();
     const items = await fetchLogs();
-    const hash = stableHash(items);
+    
+    // Select 연월 옵션 갱신 및 유지
+    initMonthOptions(items);
+
+    // 필터링된 현재 월의 해시값 기준 검사
+    const selectedYM = getSelectedYearMonth();
+    const filteredItems = items.filter(it => it.date && it.date.startsWith(selectedYM));
+    const hash = stableHash(filteredItems);
 
     if (hash !== lastSyncHash || !listEl.querySelector('.row')) {
       renderList(items);
@@ -836,11 +936,12 @@ function downloadFile(filename, content, mimeType){
   URL.revokeObjectURL(url);
 }
 
+// 내보내기 할 때는 '현재 화면에 필터링되어 나타난 월의 데이터'만 추출
 function exportCsv(){
   const rows = getCurrentRowsData();
   const csv = convertRowsToCsv(rows);
   downloadFile(
-    `차량기록-${getTodayLocalDate()}.csv`,
+    `차량기록-${getSelectedYearMonth()}.csv`,
     csv,
     'text/csv;charset=utf-8;'
   );
@@ -895,7 +996,7 @@ function exportExcel(){
   const rows = getCurrentRowsData();
   const html = convertRowsToExcelHtml(rows);
   downloadFile(
-    `차량기록-${getTodayLocalDate()}.xls`,
+    `차량기록-${getSelectedYearMonth()}.xls`,
     html,
     'application/vnd.ms-excel;charset=utf-8;'
   );
@@ -1001,14 +1102,33 @@ function stopAutoSync(){
 
 /* ===== 이벤트 ===== */
 
+// 월 선택 변경 시 렌더링을 다시 함
+monthSelect.addEventListener('change', () => {
+  lastSyncHash = ''; // 해시값 초기화로 강제 리렌더링 유도
+  const [year, month] = getSelectedYearMonth().split('-');
+  summaryMonth.textContent = `${parseInt(month)}월`;
+  summaryMonthFuel.textContent = `${parseInt(month)}월`;
+  renderList(allCloudItems);
+});
+
 addBtn.addEventListener('click', () => {
   clearStatus();
 
   const emptyNotice = listEl.querySelector('.empty');
   if (emptyNotice) listEl.innerHTML = '';
 
+  // 새 기록 추가 시 현재 화면에 선택된 '해당 월'의 기본 날짜를 세팅해 줍니다.
+  const selectedYM = getSelectedYearMonth();
+  const todayStr = getTodayLocalDate();
+  
+  let targetDate = todayStr;
+  // 만약 유저가 다른 과거 월을 선택한 상태라면, 해당 월의 1일로 세팅되게 처리
+  if (!todayStr.startsWith(selectedYM)) {
+    targetDate = `${selectedYM}-01`;
+  }
+
   const row = createRow({
-    date: getTodayLocalDate(),
+    date: targetDate,
     distance: 0,
     fuel: 0,
     note: '새 기록'
@@ -1016,13 +1136,13 @@ addBtn.addEventListener('click', () => {
 
   listEl.appendChild(row);
   updateSummary();
-  showStatus('맨 아래에 새 행이 추가되었습니다. 값을 입력한 뒤 다른 곳을 누르면 저장됩니다.', 'info');
+  showStatus('새 행이 추가되었습니다. 값을 입력한 뒤 다른 곳을 누르면 저장됩니다.', 'info');
 });
 
 csvBtn.addEventListener('click', () => {
   try {
     exportCsv();
-    showStatus('CSV 내보내기가 완료되었습니다.', 'success');
+    showStatus('선택된 월의 CSV 내보내기가 완료되었습니다.', 'success');
   } catch (e) {
     console.error(e);
     showStatus('CSV 내보내기에 실패했습니다.', 'error');
@@ -1032,7 +1152,7 @@ csvBtn.addEventListener('click', () => {
 excelBtn.addEventListener('click', () => {
   try {
     exportExcel();
-    showStatus('엑셀 내보내기가 완료되었습니다.', 'success');
+    showStatus('선택된 월의 엑셀 내보내기가 완료되었습니다.', 'success');
   } catch (e) {
     console.error(e);
     showStatus('엑셀 내보내기에 실패했습니다.', 'error');
